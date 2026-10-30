@@ -173,17 +173,17 @@ async function main() {
     }
 
     // Git Init & Commit
-    console.log("\n📦 Git 초기화 및 커밋 생성 중...");
-    run("git init", true);
-    run("git branch -M main", true);
-    run("git add .", true);
-    run('git commit -m "feat: complete KakaoCord fullstack application"', true);
+    console.log("\n📦 Git 초기화 및 커밋 확인 중...");
+    run("git -c safe.directory=* init", true);
+    run("git -c safe.directory=* branch -M main", true);
+    run("git -c safe.directory=* add .", true);
+    run('git -c safe.directory=* commit -m "feat: complete KakaoCord fullstack application"', true);
 
     // Git Remote & Push
     console.log("\n🚀 GitHub 원격 저장소로 코드 푸시 중...");
-    run("git remote remove origin", true);
-    run(`git remote add origin ${repoCloneUrl}`, true);
-    run("git push -u origin main -f", false);
+    run("git -c safe.directory=* remote remove origin", true);
+    run(`git -c safe.directory=* remote add origin ${repoCloneUrl}`, true);
+    run("git -c safe.directory=* push -u origin main -f", false);
   }
 
   // Generate Vercel One-Click Deploy URL
