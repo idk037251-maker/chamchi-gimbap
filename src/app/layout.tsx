@@ -15,6 +15,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko" className="dark" suppressHydrationWarning>
+      <head>
+        <script src="https://accounts.google.com/gsi/client" async defer></script>
+      </head>
       <body className="bg-slate-100 dark:bg-[#1e1f22] text-slate-900 dark:text-slate-100 selection:bg-[#5865F2] selection:text-white">
         <AppProvider>{children}</AppProvider>
       </body>

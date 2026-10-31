@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { getSupabaseConfig } from "@/lib/supabaseClient";
+import { getGoogleClientId, saveGoogleClientId } from "@/lib/googleAuth";
 import {
   X,
   Database,
@@ -27,6 +28,7 @@ export default function SupabaseCloudModal() {
 
   const [supabaseUrl, setSupabaseUrl] = useState("");
   const [supabaseKey, setSupabaseKey] = useState("");
+  const [googleClientId, setGoogleClientId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [successToast, setSuccessToast] = useState(false);
 
@@ -37,6 +39,7 @@ export default function SupabaseCloudModal() {
         setSupabaseUrl(cfg.url);
         setSupabaseKey(cfg.anonKey);
       }
+      setGoogleClientId(getGoogleClientId());
     }
   }, [isCloudConfigModalOpen]);
 
@@ -44,17 +47,23 @@ export default function SupabaseCloudModal() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabaseUrl.trim() || !supabaseKey.trim()) return;
-
     setIsSaving(true);
-    await updateSupabaseCloudKeys(supabaseUrl.trim(), supabaseKey.trim());
+
+    if (googleClientId.trim()) {
+      saveGoogleClientId(googleClientId.trim());
+    }
+
+    if (supabaseUrl.trim() && supabaseKey.trim()) {
+      await updateSupabaseCloudKeys(supabaseUrl.trim(), supabaseKey.trim());
+    }
+
     setIsSaving(false);
     setSuccessToast(true);
 
     setTimeout(() => {
       setSuccessToast(false);
       setIsCloudConfigModalOpen(false);
-    }, 1200);
+    }, 1000);
   };
 
   const handleDisconnect = () => {
@@ -128,12 +137,33 @@ export default function SupabaseCloudModal() {
 
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z" />
+                <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z" />
+                <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.6-.4-2.5s.2-1.7.4-2.5L1.6 7C.6 9 0 11.2 0 13.5s.6 4.5 1.6 6.5l3.7-2.9z" />
+                <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 21.4 7.4 24 12 24z" />
+              </svg>
+              Google OAuth Client ID (직접 연동용)
+            </label>
+            <input
+              type="text"
+              value={googleClientId}
+              onChange={(e) => setGoogleClientId(e.target.value)}
+              placeholder="예: xxxxx.apps.googleusercontent.com"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] border border-slate-200 dark:border-white/10 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Google Cloud Console의 OAuth 클라이언트 ID를 입력하면 'Google로 시작하기' 클릭 시 accounts.google.com 공식 로그인 창으로 즉시 이동합니다.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-[#5865F2]" />
-              Project URL <span className="text-rose-500">*</span>
+              Supabase Project URL (선택)
             </label>
             <input
               type="url"
-              required
               value={supabaseUrl}
               onChange={(e) => setSupabaseUrl(e.target.value)}
               placeholder="https://your-project-id.supabase.co"
@@ -144,11 +174,10 @@ export default function SupabaseCloudModal() {
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
               <Key className="w-3.5 h-3.5 text-amber-500" />
-              Anon Public API Key <span className="text-rose-500">*</span>
+              Supabase Anon Public API Key (선택)
             </label>
             <textarea
-              rows={3}
-              required
+              rows={2}
               value={supabaseKey}
               onChange={(e) => setSupabaseKey(e.target.value)}
               placeholder="eyJh..."

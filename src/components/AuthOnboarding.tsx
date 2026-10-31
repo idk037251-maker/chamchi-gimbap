@@ -5,6 +5,7 @@ import { useApp } from "@/context/AppContext";
 import { AVATAR_PRESETS, BANNER_PRESETS, PRONOUN_PRESETS } from "@/data/mockData";
 import { UserProfile } from "@/types/chat";
 import { supabaseBridge } from "@/lib/supabaseClient";
+import { getGoogleClientId, redirectToGoogleLogin } from "@/lib/googleAuth";
 import {
   Mail,
   Lock,
@@ -77,19 +78,28 @@ export default function AuthOnboarding() {
     }
   };
 
-  // Google OAuth real login
+  // Real Google OAuth login -> redirects to accounts.google.com
   const handleGoogleAuth = () => {
     setError("");
-    if (!isCloudConnected) {
-      setIsCloudConfigModalOpen(true);
+    const googleClientId = getGoogleClientId();
+
+    // 1. Direct Google OAuth 2.0 (redirects directly to accounts.google.com)
+    if (googleClientId) {
+      redirectToGoogleLogin(googleClientId);
       return;
     }
-    const oauthUrl = supabaseBridge.getGoogleOAuthUrl();
-    if (oauthUrl) {
-      window.location.href = oauthUrl;
-    } else {
-      setError("Google OAuth URL을 생성하지 못했습니다. Supabase 설정을 확인해 주세요.");
+
+    // 2. Supabase Google Provider
+    if (isCloudConnected) {
+      const oauthUrl = supabaseBridge.getGoogleOAuthUrl();
+      if (oauthUrl) {
+        window.location.href = oauthUrl;
+        return;
+      }
     }
+
+    // 3. Prompt user to connect their backend / Google Client ID
+    setIsCloudConfigModalOpen(true);
   };
 
   // Local file upload for avatar

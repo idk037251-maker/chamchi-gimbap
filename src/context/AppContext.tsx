@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { UserProfile, Community, ChatMessage, ChatStyleMode } from "@/types/chat";
 import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
+import { parseGoogleJwt } from "@/lib/googleAuth";
 import {
   supabaseBridge,
   getSupabaseConfig,
@@ -251,7 +252,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     supabaseBridge.connectRealtime(handleRealtimeEvent);
   }, [handleRealtimeEvent]);
 
-  // Handle return from Google OAuth
+  // Handle return from Google OAuth (Direct accounts.google.com or Supabase Auth)
   const consumeOAuthRedirect = useCallback(async () => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash;
@@ -264,33 +265,58 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const idToken = params.get("id_token");
     const accessToken = params.get("access_token");
-    if (!accessToken) return;
-    window.history.replaceState(null, "", window.location.pathname);
 
-    const authUser = await supabaseBridge.getUserFromAccessToken(accessToken);
-    if (!authUser?.id) {
-      setAuthError("Google 로그인 계정 정보를 불러오지 못했습니다. 다시 시도해 주세요.");
-      return;
+    // Case 1: Direct Google OAuth 2.0 (returns id_token)
+    if (idToken) {
+      window.history.replaceState(null, "", window.location.pathname);
+      const googlePayload = parseGoogleJwt(idToken);
+      if (googlePayload) {
+        const userId = `google-${googlePayload.sub}`;
+        const existing = await supabaseBridge.fetchProfile(userId);
+        if (existing) {
+          const user = mapProfileRow(existing, "google");
+          setCurrentUser(user);
+          saveLocal(STORAGE_KEYS.USER, user);
+          return;
+        }
+
+        setPendingAuthUser({
+          id: userId,
+          email: googlePayload.email || "",
+          name: googlePayload.name || (googlePayload.email || "").split("@")[0],
+          avatarUrl: googlePayload.picture || AVATAR_PRESETS[0],
+          provider: "google",
+        });
+        return;
+      }
     }
 
-    const meta = authUser.user_metadata || {};
-    const existing = await supabaseBridge.fetchProfile(authUser.id);
-    if (existing) {
-      const user = mapProfileRow(existing, "google");
-      setCurrentUser(user);
-      saveLocal(STORAGE_KEYS.USER, user);
-      return;
-    }
+    // Case 2: Supabase Google OAuth (returns access_token)
+    if (accessToken) {
+      window.history.replaceState(null, "", window.location.pathname);
+      const authUser = await supabaseBridge.getUserFromAccessToken(accessToken);
+      if (authUser?.id) {
+        const meta = authUser.user_metadata || {};
+        const existing = await supabaseBridge.fetchProfile(authUser.id);
+        if (existing) {
+          const user = mapProfileRow(existing, "google");
+          setCurrentUser(user);
+          saveLocal(STORAGE_KEYS.USER, user);
+          return;
+        }
 
-    // First time Google user -> needs to set pronouns
-    setPendingAuthUser({
-      id: authUser.id,
-      email: authUser.email || "",
-      name: meta.full_name || meta.name || (authUser.email || "").split("@")[0],
-      avatarUrl: meta.avatar_url || meta.picture || AVATAR_PRESETS[0],
-      provider: "google",
-    });
+        setPendingAuthUser({
+          id: authUser.id,
+          email: authUser.email || "",
+          name: meta.full_name || meta.name || (authUser.email || "").split("@")[0],
+          avatarUrl: meta.avatar_url || meta.picture || AVATAR_PRESETS[0],
+          provider: "google",
+        });
+        return;
+      }
+    }
   }, []);
 
   // Initialize
