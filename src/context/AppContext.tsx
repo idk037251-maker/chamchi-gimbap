@@ -255,9 +255,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Handle return from Google OAuth (Direct accounts.google.com or Supabase Auth)
   const consumeOAuthRedirect = useCallback(async () => {
     if (typeof window === "undefined") return;
-    const hash = window.location.hash;
-    if (!hash || hash.length < 2) return;
-    const params = new URLSearchParams(hash.slice(1));
+    const rawHash = window.location.hash.replace(/^#/, "");
+    const rawSearch = window.location.search.replace(/^\?/, "");
+    if (!rawHash && !rawSearch) return;
+    const params = new URLSearchParams(rawHash || rawSearch);
 
     if (params.get("error")) {
       setAuthError(`Google 로그인 실패: ${params.get("error_description") || params.get("error")}`);

@@ -110,9 +110,11 @@ export class SupabaseBridge {
   /** Builds the Supabase Google OAuth URL. After login Supabase redirects back with #access_token=... */
   public getGoogleOAuthUrl(redirectTo?: string): string {
     if (!this.config) return "";
-    const redirect = encodeURIComponent(
-      redirectTo || (typeof window !== "undefined" ? window.location.origin : "")
-    );
+    let target = redirectTo;
+    if (!target && typeof window !== "undefined") {
+      target = `${window.location.origin}${window.location.pathname}`.replace(/\/$/, "");
+    }
+    const redirect = encodeURIComponent(target || "");
     return `${this.config.url}/auth/v1/authorize?provider=google&redirect_to=${redirect}`;
   }
 

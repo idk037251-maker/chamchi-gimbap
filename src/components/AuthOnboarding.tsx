@@ -5,7 +5,7 @@ import { useApp } from "@/context/AppContext";
 import { AVATAR_PRESETS, BANNER_PRESETS, PRONOUN_PRESETS } from "@/data/mockData";
 import { UserProfile } from "@/types/chat";
 import { supabaseBridge } from "@/lib/supabaseClient";
-import { getGoogleClientId, redirectToGoogleLogin } from "@/lib/googleAuth";
+import { getGoogleClientId, saveGoogleClientId, redirectToGoogleLogin } from "@/lib/googleAuth";
 import {
   Mail,
   Lock,
@@ -51,9 +51,15 @@ export default function AuthOnboarding() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [quickGoogleClientId, setQuickGoogleClientId] = useState("");
+  const [showGoogleConfigInline, setShowGoogleConfigInline] = useState(false);
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setQuickGoogleClientId(getGoogleClientId());
+  }, []);
 
   // When Google OAuth finishes, the user lands back here to set name & pronouns
   useEffect(() => {
@@ -78,18 +84,19 @@ export default function AuthOnboarding() {
     }
   };
 
-  // Real Google OAuth login -> redirects to accounts.google.com
+  // Real Google OAuth login -> redirects directly to accounts.google.com
   const handleGoogleAuth = () => {
     setError("");
-    const googleClientId = getGoogleClientId();
+    const clientId = (getGoogleClientId() || quickGoogleClientId).trim();
 
     // 1. Direct Google OAuth 2.0 (redirects directly to accounts.google.com)
-    if (googleClientId) {
-      redirectToGoogleLogin(googleClientId);
+    if (clientId) {
+      saveGoogleClientId(clientId);
+      redirectToGoogleLogin(clientId);
       return;
     }
 
-    // 2. Supabase Google Provider
+    // 2. Supabase Google Provider (redirects through Supabase to accounts.google.com)
     if (isCloudConnected) {
       const oauthUrl = supabaseBridge.getGoogleOAuthUrl();
       if (oauthUrl) {
@@ -98,8 +105,8 @@ export default function AuthOnboarding() {
       }
     }
 
-    // 3. Prompt user to connect their backend / Google Client ID
-    setIsCloudConfigModalOpen(true);
+    // 3. Open inline quick-input without any disruptive popup modal
+    setShowGoogleConfigInline(true);
   };
 
   // Local file upload for avatar
@@ -403,6 +410,60 @@ export default function AuthOnboarding() {
                 </svg>
                 Google 계정(Gmail)으로 계속하기
               </button>
+
+              {/* Inline Google OAuth direct configuration (No popup modal) */}
+              {showGoogleConfigInline && !getGoogleClientId() && !isCloudConnected && (
+                <div className="p-4 rounded-2xl bg-indigo-50/80 dark:bg-[#1e1f22]/90 border border-[#5865F2]/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-1.5">
+                      🔑 Google OAuth 2.0 공식 로그인 설정
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowGoogleConfigInline(false)}
+                      className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Google 공식 인증창(<code>accounts.google.com</code>)으로 이동하려면 Google Cloud 콘솔에서 발급받은 OAuth Client ID가 필요합니다.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={quickGoogleClientId}
+                      onChange={(e) => setQuickGoogleClientId(e.target.value)}
+                      placeholder="OAuth Client ID (예: xxxx.apps.googleusercontent.com)"
+                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-white dark:bg-[#2b2d31] border border-slate-300 dark:border-white/10 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!quickGoogleClientId.trim()) {
+                          setError("Google OAuth Client ID를 입력해 주세요.");
+                          return;
+                        }
+                        saveGoogleClientId(quickGoogleClientId.trim());
+                        redirectToGoogleLogin(quickGoogleClientId.trim());
+                      }}
+                      className="px-3.5 py-2 text-xs font-bold rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white shrink-0 shadow-xs"
+                    >
+                      저장 후 accounts.google.com 이동
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/50 dark:border-white/5">
+                    <span>Supabase Google Auth 연동을 원하시면:</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsCloudConfigModalOpen(true)}
+                      className="text-[#5865F2] hover:underline font-semibold"
+                    >
+                      Supabase 설정
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="relative flex py-1 items-center">
                 <div className="flex-grow border-t border-slate-200 dark:border-white/10" />
