@@ -1,0 +1,22 @@
+name: Supabase Inactivity Prevention (Keep-Alive)
+
+on:
+  schedule:
+    # Runs every 3 days at 00:00 UTC (well within the 7-day idle limit)
+    - cron: '0 0 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database
+        env:
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_KEY" ]; then
+            curl -s -f -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/communities?limit=1" > /dev/null && echo "Supabase keep-alive ping successful!" || echo "Ping failed"
+          else
+            echo "Secrets not set yet, skipping ping."
+          fi

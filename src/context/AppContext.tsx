@@ -2,13 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { UserProfile, Community, ChatMessage, ChatStyleMode } from "@/types/chat";
-import {
-  INITIAL_COMMUNITIES,
-  INITIAL_MESSAGES,
-  SIMULATED_REPLIES,
-  AVATAR_PRESETS,
-  BANNER_PRESETS,
-} from "@/data/mockData";
+import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import {
   supabaseBridge,
   getSupabaseConfig,
@@ -17,7 +11,6 @@ import {
   RealtimeEvent,
 } from "@/lib/supabaseClient";
 
-/** Identity obtained from Supabase Auth (Google OAuth / email) that still needs onboarding. */
 export interface PendingAuthUser {
   id: string;
   email: string;
@@ -83,21 +76,17 @@ interface AppContextType {
   messages: ChatMessage[];
   sendMessage: (content: string, attachmentUrl?: string) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => void;
-  typingUser: string | null;
-  triggerDemoIncomingMessage: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  USER: "kakaocord_user_v1",
-  COMMUNITIES: "kakaocord_communities_v1",
-  MESSAGES: "kakaocord_messages_v1",
-  JOINED: "kakaocord_joined_v1",
-  THEME: "kakaocord_theme_v1",
+  USER: "kakaocord_user_v2",
+  COMMUNITIES: "kakaocord_communities_v2",
+  MESSAGES: "kakaocord_messages_v2",
+  JOINED: "kakaocord_joined_v2",
+  THEME: "kakaocord_theme_v2",
 };
-
-// ------------------------------------------------------------------ helpers
 
 const formatKoreanTime = (dateObj = new Date()) => {
   const hours = dateObj.getHours();
@@ -113,9 +102,7 @@ const newId = (prefix: string) =>
 const saveLocal = (key: string, value: unknown) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* quota or private mode – ignore */
-  }
+  } catch {}
 };
 
 function mapCommunityRow(r: any): Community {
@@ -130,7 +117,7 @@ function mapCommunityRow(r: any): Community {
     memberCount: r.member_count || 1,
     onlineCount: r.online_count || 1,
     createdBy: r.created_by || "방장",
-    createdAt: r.created_at ? String(r.created_at).slice(0, 10) : "",
+    createdAt: r.created_at ? String(r.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     tags: Array.isArray(r.tags) ? r.tags : [],
     channels:
       Array.isArray(r.channels) && r.channels.length > 0
@@ -163,7 +150,7 @@ function mapMessageRow(r: any): ChatMessage {
     channelId: r.channel_id || "general",
     senderId: r.sender_id,
     senderName: r.sender_name,
-    senderPronouns: r.sender_pronouns,
+    senderPronouns: r.sender_pronouns || "",
     senderAvatar: r.sender_avatar || "",
     senderRole: r.sender_role || "멤버",
     content: r.content,
@@ -171,6 +158,7 @@ function mapMessageRow(r: any): ChatMessage {
     unreadCount: 0,
     reactions: Array.isArray(r.reactions) ? r.reactions : [],
     isSystem: !!r.is_system,
+    attachmentUrl: r.attachment_url || undefined,
   };
 }
 
@@ -203,7 +191,7 @@ function mapProfileRow(r: any, provider: UserProfile["authProvider"]): UserProfi
     bio: r.bio || "",
     statusMessage: r.status_message || "",
     status: r.status || "online",
-    createdAt: r.created_at ? String(r.created_at).slice(0, 10) : "",
+    createdAt: r.created_at ? String(r.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     authProvider: provider,
   };
 }
@@ -222,8 +210,6 @@ function profileToRow(u: UserProfile) {
     status: u.status,
   };
 }
-
-// ------------------------------------------------------------------ provider
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
@@ -244,12 +230,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [activeCommunityId, setActiveCommunityId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string>("general");
-  const [typingUser, setTypingUser] = useState<string | null>(null);
 
   const broadcastRef = useRef<BroadcastChannel | null>(null);
 
-  // ---------------------------------------------------------- cloud bootstrap
-
+  // Realtime subscription callback
   const handleRealtimeEvent = useCallback((evt: RealtimeEvent) => {
     if (evt.table === "messages") {
       const incoming = mapMessageRow(evt.record);
@@ -267,7 +251,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     supabaseBridge.connectRealtime(handleRealtimeEvent);
   }, [handleRealtimeEvent]);
 
-  /** After Google OAuth, Supabase redirects back with #access_token=... in the URL. */
+  // Handle return from Google OAuth
   const consumeOAuthRedirect = useCallback(async () => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash;
@@ -275,9 +259,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const params = new URLSearchParams(hash.slice(1));
 
     if (params.get("error")) {
-      setAuthError(
-        `Google 로그인 실패: ${params.get("error_description") || params.get("error")}`
-      );
+      setAuthError(`Google 로그인 실패: ${params.get("error_description") || params.get("error")}`);
       window.history.replaceState(null, "", window.location.pathname);
       return;
     }
@@ -288,7 +270,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const authUser = await supabaseBridge.getUserFromAccessToken(accessToken);
     if (!authUser?.id) {
-      setAuthError("Google 로그인 정보를 확인하지 못했습니다. 다시 시도해 주세요.");
+      setAuthError("Google 로그인 계정 정보를 불러오지 못했습니다. 다시 시도해 주세요.");
       return;
     }
 
@@ -301,7 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // First login → onboarding (name prefilled from Google, pronouns default)
+    // First time Google user -> needs to set pronouns
     setPendingAuthUser({
       id: authUser.id,
       email: authUser.email || "",
@@ -311,6 +293,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Initialize
   useEffect(() => {
     const cloud = !!getSupabaseConfig();
     setIsCloudConnected(cloud);
@@ -323,15 +306,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedUser) setCurrentUser(JSON.parse(savedUser));
 
       const savedJoined = localStorage.getItem(STORAGE_KEYS.JOINED);
-      setJoinedCommunityIds(
-        savedJoined ? JSON.parse(savedJoined) : cloud ? [] : ["comm-frontend-kr", "comm-game-party"]
-      );
+      if (savedJoined) setJoinedCommunityIds(JSON.parse(savedJoined));
 
       if (!cloud) {
         const savedCommunities = localStorage.getItem(STORAGE_KEYS.COMMUNITIES);
         const savedMessages = localStorage.getItem(STORAGE_KEYS.MESSAGES);
-        setCommunities(savedCommunities ? JSON.parse(savedCommunities) : INITIAL_COMMUNITIES);
-        setMessages(savedMessages ? JSON.parse(savedMessages) : INITIAL_MESSAGES);
+        if (savedCommunities) setCommunities(JSON.parse(savedCommunities));
+        if (savedMessages) setMessages(JSON.parse(savedMessages));
       }
     } catch (e) {
       console.error("Failed to restore local state", e);
@@ -346,7 +327,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => supabaseBridge.disconnectRealtime();
   }, [startCloud, consumeOAuthRedirect]);
 
-  // Load persisted history whenever a channel is opened (cloud mode)
+  // Load real channel messages
   useEffect(() => {
     if (!isCloudConnected || !activeCommunityId) return;
     let cancelled = false;
@@ -357,7 +338,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const others = prev.filter(
           (m) => !(m.communityId === activeCommunityId && m.channelId === activeChannelId)
         );
-        // keep realtime messages that arrived after the fetch started
         const extra = prev.filter(
           (m) =>
             m.communityId === activeCommunityId &&
@@ -372,7 +352,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isCloudConnected, activeCommunityId, activeChannelId]);
 
-  // Persist local-demo data
+  // Persist local state
   useEffect(() => {
     if (!isHydrated || isCloudConnected) return;
     saveLocal(STORAGE_KEYS.COMMUNITIES, communities);
@@ -383,13 +363,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     saveLocal(STORAGE_KEYS.MESSAGES, messages.slice(-500));
   }, [messages, isHydrated, isCloudConnected]);
 
-  // Theme class on <html>
+  // Theme
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     saveLocal(STORAGE_KEYS.THEME, theme);
   }, [theme]);
 
-  // Cross-tab sync for local demo mode
+  // Multi-tab real-time sync
   useEffect(() => {
     if (typeof window === "undefined" || !("BroadcastChannel" in window)) return;
     const channel = new BroadcastChannel("kakaocord_realtime_channel");
@@ -404,8 +384,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     return () => channel.close();
   }, []);
-
-  // ------------------------------------------------------------------ actions
 
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 
@@ -422,8 +400,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     supabaseBridge.disconnectRealtime();
     supabaseBridge.refreshConfig();
     setIsCloudConnected(false);
-    setCommunities(INITIAL_COMMUNITIES);
-    setMessages(INITIAL_MESSAGES);
+    setCommunities([]);
+    setMessages([]);
   };
 
   const loginOrRegister = (user: UserProfile) => {
@@ -434,7 +412,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (isCloudConnected) supabaseBridge.upsertProfile(profileToRow(user));
   };
 
-  /** Email login: if a profile already exists for this auth user, log straight in. */
   const loginWithAuthUserId = async (authUser: PendingAuthUser) => {
     const existing = await supabaseBridge.fetchProfile(authUser.id);
     if (existing) {
@@ -467,7 +444,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     bucket: "avatars" | "banners",
     file: File
   ): Promise<string> => {
-    if (isCloudConnected) return supabaseBridge.uploadFile(bucket, file, file.name);
+    if (isCloudConnected) {
+      try {
+        return await supabaseBridge.uploadFile(bucket, file, file.name);
+      } catch (e) {
+        console.warn("Storage upload error, falling back to local data URL:", e);
+      }
+    }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
@@ -494,23 +477,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const nextJoined = [...joinedCommunityIds, communityId];
     setJoinedCommunityIds(nextJoined);
     saveLocal(STORAGE_KEYS.JOINED, nextJoined);
-
-    if (!currentUser) return;
-    const sysMsg: ChatMessage = {
-      id: newId("sys"),
-      communityId,
-      channelId: "general",
-      senderId: "system",
-      senderName: "시스템 알림",
-      senderPronouns: "-",
-      senderAvatar: "",
-      content: `🎉 ${currentUser.name} (${currentUser.pronouns}) 님이 커뮤니티에 입장하셨습니다!`,
-      timestamp: formatKoreanTime(),
-      isSystem: true,
-      reactions: [],
-    };
-    setMessages((prev) => [...prev, sysMsg]);
-    if (isCloudConnected) supabaseBridge.insertMessage(messageToRow(sysMsg));
   };
 
   const createCommunity = async (data: NewCommunityInput) => {
@@ -526,39 +492,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       onlineCount: 1,
       createdBy: currentUser?.name || "익명 방장",
       createdAt: new Date().toISOString().slice(0, 10),
-      tags: data.tags.length > 0 ? data.tags : ["#신규오픈"],
+      tags: data.tags.length > 0 ? data.tags : ["#오픈채팅"],
       channels: [
-        { id: "general", name: "메인-오픈채팅방", type: "text", description: `${data.name}의 메인 실시간 대화 채널` },
-        { id: "notice", name: "공지사항-규칙", type: "announcement", description: "커뮤니티 규칙 및 중요 공지" },
-        { id: "qna", name: "자유-질문방", type: "qna", description: "궁금한 점을 편하게 물어보는 공간" },
+        { id: "general", name: "자유-수다방", type: "text", description: `${data.name}의 메인 대화 채널` },
+        { id: "notice", name: "공지사항-규칙", type: "announcement", description: "커뮤니티 규칙 및 안내" },
+        { id: "qna", name: "자유-질문방", type: "qna", description: "궁금한 점을 편하게 물어보는 채널" },
       ],
-    };
-
-    const welcomeMsg: ChatMessage = {
-      id: newId("msg"),
-      communityId: newComm.id,
-      channelId: "general",
-      senderId: currentUser?.id || "creator",
-      senderName: currentUser?.name || "방장",
-      senderPronouns: currentUser?.pronouns || "그들/그들의 (They/Them)",
-      senderAvatar: currentUser?.avatarUrl || "",
-      senderRole: "방장",
-      content: `🎉 '${newComm.name}' 커뮤니티가 개설되었습니다! 상단의 [규칙 및 상세 정보]를 확인하고 인사를 나눠보세요!`,
-      timestamp: formatKoreanTime(),
-      reactions: [],
     };
 
     if (isCloudConnected) {
       const ok = await supabaseBridge.insertCommunity(communityToRow(newComm));
       if (!ok) throw new Error("커뮤니티를 DB에 저장하지 못했습니다. Supabase 설정을 확인해 주세요.");
-      await supabaseBridge.insertMessage(messageToRow(welcomeMsg));
     } else {
       broadcastRef.current?.postMessage({ type: "NEW_COMMUNITY", payload: newComm });
-      broadcastRef.current?.postMessage({ type: "NEW_MESSAGE", payload: welcomeMsg });
     }
 
     setCommunities((prev) => (prev.some((c) => c.id === newComm.id) ? prev : [newComm, ...prev]));
-    setMessages((prev) => (prev.some((m) => m.id === welcomeMsg.id) ? prev : [...prev, welcomeMsg]));
     setJoinedCommunityIds((prev) => {
       const next = [...prev, newComm.id];
       saveLocal(STORAGE_KEYS.JOINED, next);
@@ -570,30 +519,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setIsCreateModalOpen(false);
     setIsDrawerOpen(false);
     return newComm;
-  };
-
-  /** Local demo only: simulates another member replying. Never runs in cloud mode. */
-  const simulateReply = (communityId: string, channelId: string) => {
-    const replier = SIMULATED_REPLIES[Math.floor(Math.random() * SIMULATED_REPLIES.length)];
-    setTypingUser(`${replier.senderName} (${replier.senderPronouns})`);
-    setTimeout(() => {
-      setTypingUser(null);
-      const reply: ChatMessage = {
-        id: newId("msg-demo"),
-        communityId,
-        channelId,
-        senderId: `sim-${replier.senderName}`,
-        senderName: replier.senderName,
-        senderPronouns: replier.senderPronouns,
-        senderAvatar: replier.senderAvatar,
-        senderRole: replier.senderRole,
-        content: replier.templates[Math.floor(Math.random() * replier.templates.length)],
-        timestamp: formatKoreanTime(),
-        unreadCount: 0,
-        reactions: [],
-      };
-      setMessages((prev) => [...prev, reply]);
-    }, 1500);
   };
 
   const sendMessage = async (content: string, attachmentUrl?: string) => {
@@ -610,12 +535,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       senderRole: "멤버",
       content: content.trim(),
       timestamp: formatKoreanTime(),
-      unreadCount: isCloudConnected ? 0 : 1,
+      unreadCount: 0,
       reactions: [],
       attachmentUrl,
     };
 
-    // Optimistic render; the realtime echo is de-duplicated by id.
     setMessages((prev) => [...prev, newMsg]);
 
     if (isCloudConnected) {
@@ -623,7 +547,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!ok) {
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === newMsg.id ? { ...m, content: `${m.content}\n⚠️ 전송 실패 (네트워크/DB 설정 확인)` } : m
+            m.id === newMsg.id ? { ...m, content: `${m.content} (⚠️ 전송 실패)` } : m
           )
         );
       }
@@ -631,20 +555,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     broadcastRef.current?.postMessage({ type: "NEW_MESSAGE", payload: newMsg });
-    const commId = activeCommunityId;
-    const chanId = activeChannelId;
-    setTimeout(() => {
-      setMessages((prev) => prev.map((m) => (m.id === newMsg.id ? { ...m, unreadCount: 0 } : m)));
-      simulateReply(commId, chanId);
-    }, 900);
   };
 
-  const triggerDemoIncomingMessage = () => {
-    if (!activeCommunityId || isCloudConnected) return;
-    simulateReply(activeCommunityId, activeChannelId);
-  };
-
-  // Reactions are kept client-side (not persisted) to keep the schema simple.
   const toggleReaction = (messageId: string, emoji: string) => {
     const userId = currentUser?.id || "guest";
     setMessages((prev) =>
@@ -705,8 +617,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         messages,
         sendMessage,
         toggleReaction,
-        typingUser,
-        triggerDemoIncomingMessage,
       }}
     >
       {children}
