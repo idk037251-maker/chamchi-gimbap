@@ -144,7 +144,7 @@ export default function HamburgerDrawer() {
               </div>
 
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {currentUser.email}
+                @{currentUser.username || currentUser.name}
               </p>
 
               {/* BIO box */}

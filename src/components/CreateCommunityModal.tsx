@@ -79,6 +79,7 @@ export default function CreateCommunityModal() {
       });
       setName("");
       setDescription("");
+      setIsCreateModalOpen(false);
     } catch (err: any) {
       setError(err?.message || "커뮤니티 생성에 실패했습니다.");
     }

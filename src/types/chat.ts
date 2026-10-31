@@ -2,17 +2,18 @@ export type UserStatus = "online" | "idle" | "dnd" | "offline";
 
 export interface UserProfile {
   id: string;
-  email: string;
+  username: string; // 사이트 전용 고유 아이디
+  email?: string;
   name: string;
-  pronouns: string; // e.g., "그/그의 (He/Him)", "그녀/그녀의 (She/Her)", "그들/그들의 (They/Them)"
+  pronouns: string; // e.g., "그/그의", "그녀/그녀의", "they/them", 직접 타이핑 입력
   avatarUrl: string;
   bannerUrl: string;
   bannerColor: string;
   bio: string;
-  statusMessage: string; // KakaoTalk style short status message
+  statusMessage: string; // 카카오톡 스타일 상태 메시지
   status: UserStatus;
   createdAt: string;
-  authProvider: "email" | "google" | "kakao";
+  authProvider: "site" | "email" | "google" | "kakao";
 }
 
 export interface Channel {
