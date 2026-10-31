@@ -224,7 +224,10 @@ export default function HamburgerDrawer() {
                 return (
                   <button
                     key={comm.id}
-                    onClick={() => joinCommunity(comm.id)}
+                    onClick={() => {
+                      joinCommunity(comm.id);
+                      setIsDrawerOpen(false);
+                    }}
                     className={`w-full p-2.5 rounded-xl flex items-center gap-3 text-left transition ${
                       isActive
                         ? "bg-[#5865F2] text-white shadow-sm"

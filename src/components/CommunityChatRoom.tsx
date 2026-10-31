@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   X,
+  Loader2,
 } from "lucide-react";
 
 export default function CommunityChatRoom() {
@@ -57,7 +58,22 @@ export default function CommunityChatRoom() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [roomMessages.length, activeCommunityId, activeChannelId]);
 
-  if (!community || !currentUser) return null;
+  if (!currentUser) return null;
+
+  if (!community) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 dark:bg-[#313338] text-slate-500 dark:text-slate-400 p-8 space-y-3">
+        <Loader2 className="w-8 h-8 animate-spin text-[#5865F2]" />
+        <p className="font-bold text-sm">커뮤니티 채팅방에 연결 중...</p>
+        <button
+          onClick={() => setActiveCommunityId(null)}
+          className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-200 dark:bg-[#1e1f22] text-slate-700 dark:text-slate-300 hover:bg-slate-300 transition"
+        >
+          로비로 돌아가기
+        </button>
+      </div>
+    );
+  }
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();

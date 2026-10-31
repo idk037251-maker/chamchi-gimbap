@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { BANNER_PRESETS } from "@/data/mockData";
 import {
@@ -10,6 +10,7 @@ import {
   FileText,
   Sparkles,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 
 const EMOJI_PRESETS = ["💬", "⚛️", "🎮", "🎨", "☕", "🚀", "🎵", "📚", "🔥", "⚡"];
@@ -37,11 +38,15 @@ export default function CreateCommunityModal() {
   );
   const [tagsInput, setTagsInput] = useState("#오픈채팅 #디스코드 #실시간소통");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   if (!isCreateModalOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isSubmitting) return;
+
     setError("");
 
     if (!name.trim()) {
@@ -67,6 +72,9 @@ export default function CreateCommunityModal() {
       .map((t) => (t.startsWith("#") ? t : `#${t}`))
       .filter((t) => t.length > 1);
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     try {
       await createCommunity({
         name: name.trim(),
@@ -77,11 +85,15 @@ export default function CreateCommunityModal() {
         bannerGradient,
         tags: parsedTags,
       });
+
       setName("");
       setDescription("");
       setIsCreateModalOpen(false);
     } catch (err: any) {
       setError(err?.message || "커뮤니티 생성에 실패했습니다.");
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -267,17 +279,28 @@ export default function CreateCommunityModal() {
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 dark:border-white/10">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsCreateModalOpen(false)}
-              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#35373c] transition"
+              className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#35373c] transition disabled:opacity-50"
             >
               취소
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold shadow-lg flex items-center gap-2 transition"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold shadow-lg flex items-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <CheckCircle2 className="w-4 h-4 text-[#FEE500]" />
-              <span>커뮤니티 생성 완료 및 입장</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#FEE500]" />
+                  <span>커뮤니티 생성 및 입장 중...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-[#FEE500]" />
+                  <span>커뮤니티 생성 완료 및 입장</span>
+                </>
+              )}
             </button>
           </div>
         </form>

@@ -307,46 +307,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const joinCommunity = (communityId: string) => {
     setJoinedCommunityIds((prev) => {
-      if (prev.includes(communityId)) return prev;
-      const next = [...prev, communityId];
+      const next = prev.includes(communityId) ? prev : [...prev, communityId];
       saveLocal(STORAGE_KEYS.JOINED, next);
       return next;
     });
+    // Immediately navigate to the community's chat room!
+    setActiveCommunityId(communityId);
+    setActiveChannelId("general");
   };
 
+  const isCreatingRef = useRef(false);
+
   const createCommunity = async (data: NewCommunityInput): Promise<Community> => {
-    const commId = newId("comm");
-    const newComm: Community = {
-      id: commId,
-      name: data.name.trim(),
-      description: data.description.trim(),
-      rules: data.rules.filter((r) => r.trim().length > 0),
-      category: data.category || "자유 / 소통",
-      iconEmoji: data.iconEmoji || "💬",
-      bannerGradient: data.bannerGradient || BANNER_PRESETS[0].gradient,
-      memberCount: 1,
-      onlineCount: 1,
-      createdBy: currentUser?.name || "방장",
-      createdAt: new Date().toISOString().slice(0, 10),
-      tags: data.tags || [],
-      channels: [{ id: "general", name: "자유-대화방", type: "text", description: "메인 대화 채널" }],
-    };
+    if (isCreatingRef.current) {
+      throw new Error("이미 커뮤니티를 생성하는 중입니다.");
+    }
+    isCreatingRef.current = true;
 
-    // Save to Cloud DB
-    const updatedList = await cloudStore.saveCommunity(newComm);
-    setCommunities(updatedList);
-
-    // Broadcast across tabs
     try {
-      broadcastRef.current?.postMessage({ type: "NEW_COMMUNITY", payload: newComm });
-    } catch {}
+      const commId = newId("comm");
+      const newComm: Community = {
+        id: commId,
+        name: data.name.trim(),
+        description: data.description.trim(),
+        rules: data.rules.filter((r) => r.trim().length > 0),
+        category: data.category || "자유 / 소통",
+        iconEmoji: data.iconEmoji || "💬",
+        bannerGradient: data.bannerGradient || BANNER_PRESETS[0].gradient,
+        memberCount: 1,
+        onlineCount: 1,
+        createdBy: currentUser?.name || "방장",
+        createdAt: new Date().toISOString().slice(0, 10),
+        tags: data.tags || [],
+        channels: [{ id: "general", name: "자유-대화방", type: "text", description: "메인 대화 채널" }],
+      };
 
-    // Auto join and activate
-    joinCommunity(commId);
-    setActiveCommunityId(commId);
-    setActiveChannelId("general");
+      // 1. Optimistically add to state and immediately switch to chat view
+      setCommunities((prev) => {
+        if (prev.some((c) => c.id === commId || c.name.trim() === newComm.name.trim())) {
+          return prev;
+        }
+        return [newComm, ...prev];
+      });
 
-    return newComm;
+      setJoinedCommunityIds((prev) => {
+        const next = prev.includes(commId) ? prev : [...prev, commId];
+        saveLocal(STORAGE_KEYS.JOINED, next);
+        return next;
+      });
+
+      setActiveCommunityId(commId);
+      setActiveChannelId("general");
+
+      // 2. Persist to Cloud DB
+      const updatedList = await cloudStore.saveCommunity(newComm);
+      setCommunities(updatedList);
+
+      // 3. Broadcast across tabs
+      try {
+        broadcastRef.current?.postMessage({ type: "NEW_COMMUNITY", payload: newComm });
+      } catch {}
+
+      return newComm;
+    } finally {
+      isCreatingRef.current = false;
+    }
   };
 
   const sendMessage = async (content: string, attachmentUrl?: string) => {

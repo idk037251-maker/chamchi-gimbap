@@ -113,7 +113,20 @@ export const cloudStore = {
       });
       if (!res.ok) return [];
       const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return [];
+
+      // Strict deduplication by ID and normalized Name + Creator
+      const seenIds = new Set<string>();
+      const seenNames = new Set<string>();
+      return data.filter((c) => {
+        if (!c || !c.id) return false;
+        if (seenIds.has(c.id)) return false;
+        const normKey = `${(c.name || "").trim().toLowerCase()}___${(c.createdBy || "").trim().toLowerCase()}`;
+        if (seenNames.has(normKey)) return false;
+        seenIds.add(c.id);
+        seenNames.add(normKey);
+        return true;
+      });
     } catch {
       return [];
     }
@@ -122,7 +135,21 @@ export const cloudStore = {
   async saveCommunity(newComm: Community): Promise<Community[]> {
     try {
       const current = await this.loadCommunities();
-      const updated = [newComm, ...current.filter((c) => c.id !== newComm.id)];
+
+      // Check if duplicate already exists
+      const isDuplicate = current.some(
+        (c) =>
+          c.id === newComm.id ||
+          (c.name.trim().toLowerCase() === newComm.name.trim().toLowerCase() &&
+            c.createdBy.trim().toLowerCase() === newComm.createdBy.trim().toLowerCase())
+      );
+
+      if (isDuplicate) {
+        console.warn("Duplicate community creation prevented in cloud store:", newComm.name);
+        return current;
+      }
+
+      const updated = [newComm, ...current];
       await fetch(`${CLOUD_BASE}/kakaocord_communities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
