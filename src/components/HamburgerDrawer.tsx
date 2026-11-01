@@ -36,6 +36,8 @@ export default function HamburgerDrawer() {
     setIsDmDrawerOpen,
     inspectUser,
     joinCommunity,
+    getCommunityUnreadCount,
+    totalCommunityUnreadCount,
     theme,
     toggleTheme,
     logout,
@@ -243,9 +245,16 @@ export default function HamburgerDrawer() {
               <Compass className="w-4 h-4" />
               전체 커뮤니티 로비 (탐색)
             </span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10">
-              {dedupedCommunities.length}개
-            </span>
+            <div className="flex items-center gap-1.5">
+              {totalCommunityUnreadCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-4.5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black shadow-xs">
+                  {totalCommunityUnreadCount > 99 ? "99+" : totalCommunityUnreadCount}
+                </span>
+              )}
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10">
+                {dedupedCommunities.length}개
+              </span>
+            </div>
           </button>
         </div>
 
@@ -267,6 +276,7 @@ export default function HamburgerDrawer() {
               <div className="space-y-1">
                 {joinedCommunities.map((comm) => {
                   const isActive = activeCommunityId === comm.id;
+                  const unreadCount = getCommunityUnreadCount(comm.id);
                   return (
                     <button
                       key={comm.id}
@@ -285,7 +295,14 @@ export default function HamburgerDrawer() {
                         <span className="text-base">{comm.iconEmoji}</span>
                         <span className="truncate">{comm.name}</span>
                       </div>
-                      <span className="text-[10px] opacity-75">{comm.memberCount}명</span>
+                      <div className="flex items-center gap-1.5">
+                        {unreadCount > 0 && (
+                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-black shadow-sm">
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </span>
+                        )}
+                        <span className="text-[10px] opacity-75">{comm.memberCount}명</span>
+                      </div>
                     </button>
                   );
                 })}

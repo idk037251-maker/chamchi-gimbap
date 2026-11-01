@@ -30,6 +30,7 @@ export default function CommunityLobby() {
     joinCommunity,
     setIsCreateModalOpen,
     currentUser,
+    getCommunityUnreadCount,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -140,6 +141,7 @@ export default function CommunityLobby() {
             {filteredCommunities.map((comm) => {
               const isJoined = (joinedCommunityIds || []).includes(comm.id);
               const isKicked = !!currentUser && (comm.kickedUserIds || []).includes(currentUser.id);
+              const unreadCount = getCommunityUnreadCount(comm.id);
 
               return (
                 <div
@@ -178,6 +180,14 @@ export default function CommunityLobby() {
                         {comm.category}
                       </span>
                       <div className="flex items-center gap-1.5">
+                        {unreadCount > 0 && !isKicked && (
+                          <span
+                            className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[11px] font-black shadow-lg border border-white/40 animate-pulse"
+                            title={`안 읽은 새 메시지 ${unreadCount}개`}
+                          >
+                            {unreadCount > 99 ? "99+" : unreadCount}
+                          </span>
+                        )}
                         {isKicked && (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
                             입장 차단 (강퇴됨)
@@ -194,8 +204,15 @@ export default function CommunityLobby() {
                     {/* Content */}
                     <div className="p-5 pt-0 relative">
                       <div className="flex items-end justify-between -mt-7 mb-3">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-900 border-4 border-white dark:border-[#2b2d31] flex items-center justify-center text-2xl shadow-md">
-                          {comm.iconEmoji}
+                        <div className="relative">
+                          <div className="w-14 h-14 rounded-2xl bg-slate-900 border-4 border-white dark:border-[#2b2d31] flex items-center justify-center text-2xl shadow-md">
+                            {comm.iconEmoji}
+                          </div>
+                          {unreadCount > 0 && !isKicked && (
+                            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-rose-600 text-white text-[10px] font-black shadow-md border-2 border-white dark:border-[#2b2d31]">
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </span>
+                          )}
                         </div>
                         <span className="text-[11px] text-slate-400">
                           방장: <strong className="text-slate-600 dark:text-slate-300">{comm.createdBy}</strong>
@@ -203,7 +220,14 @@ export default function CommunityLobby() {
                       </div>
 
                       <h3 className="font-extrabold text-lg text-slate-900 dark:text-white group-hover:text-[#5865F2] dark:group-hover:text-indigo-400 transition flex items-center justify-between gap-2">
-                        <span className="truncate">{comm.name}</span>
+                        <span className="truncate flex items-center gap-2">
+                          <span>{comm.name}</span>
+                          {unreadCount > 0 && !isKicked && (
+                            <span className="inline-flex items-center justify-center min-w-[19px] h-4.5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-black shadow-xs">
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </span>
+                          )}
+                        </span>
                         <ArrowUpRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition flex-shrink-0 text-[#5865F2]" />
                       </h3>
 

@@ -46,6 +46,7 @@ export default function CommunityChatRoom() {
     deleteChatMessage,
     claimCommunityOwnership,
     markCommunityMessagesRead,
+    recordCommunityRead,
     inspectUser,
     deleteCommunity,
     kickMember,
@@ -120,14 +121,17 @@ export default function CommunityChatRoom() {
 
   // Auto mark messages as read
   useEffect(() => {
-    if (!currentUser || !activeCommunityId || roomMessages.length === 0) return;
-    const unreadIds = roomMessages
-      .filter((m) => !(m.readUserIds || [m.senderId]).includes(currentUser.id))
-      .map((m) => m.id);
-    if (unreadIds.length > 0) {
-      markCommunityMessagesRead(activeCommunityId, unreadIds);
+    if (!currentUser || !activeCommunityId) return;
+    if (roomMessages.length > 0) {
+      const unreadIds = roomMessages
+        .filter((m) => !(m.readUserIds || [m.senderId]).includes(currentUser.id))
+        .map((m) => m.id);
+      if (unreadIds.length > 0) {
+        markCommunityMessagesRead(activeCommunityId, unreadIds);
+      }
     }
-  }, [currentUser?.id, activeCommunityId, roomMessages, markCommunityMessagesRead]);
+    recordCommunityRead(activeCommunityId);
+  }, [currentUser?.id, activeCommunityId, roomMessages, markCommunityMessagesRead, recordCommunityRead]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

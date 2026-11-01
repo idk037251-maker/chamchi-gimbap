@@ -28,6 +28,7 @@ import {
   getSupabaseConfig,
   saveSupabaseConfig,
   clearSupabaseConfig,
+  supabaseBridge,
 } from "@/lib/supabaseClient";
 
 type NewCommunityInput = {
@@ -104,6 +105,12 @@ interface AppContextType {
   markCommunityMessagesRead: (communityId: string, messageIds: string[]) => Promise<void>;
   deleteChatMessage: (communityId: string, messageId: string) => Promise<void>;
   claimCommunityOwnership: (communityId: string) => Promise<boolean>;
+
+  // Community Unread Notification Badges
+  unreadCounts: Record<string, number>;
+  recordCommunityRead: (communityId: string) => void;
+  getCommunityUnreadCount: (communityId: string) => number;
+  totalCommunityUnreadCount: number;
 
   // User Inspection & Follow
   inspectedUser: UserProfile | null;
@@ -182,6 +189,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeCommunityId, setActiveCommunityId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string>("general");
 
+  // Community Unread Notification Badges
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+
   // User Profile Inspection & Follow states
   const [inspectedUser, setInspectedUser] = useState<UserProfile | null>(null);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
@@ -203,6 +213,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   currentUserRef.current = currentUser;
   const activeDmUserRef = useRef<UserProfile | null>(null);
   activeDmUserRef.current = activeDmUser;
+
+  // Record community read timestamp and clear badge
+  const recordCommunityRead = useCallback((communityId: string) => {
+    if (!currentUserRef.current || !communityId) return;
+    const uid = currentUserRef.current.id;
+    cloudStore.recordLastRead(communityId, uid);
+    setUnreadCounts((prev) => {
+      if (!prev[communityId]) return prev;
+      const next = { ...prev };
+      delete next[communityId];
+      return next;
+    });
+    try {
+      broadcastRef.current?.postMessage({
+        type: "COMMUNITY_READ",
+        payload: { communityId, userId: uid },
+      });
+    } catch {}
+  }, []);
 
   // Initialize from LocalStorage and Cloud
   useEffect(() => {
@@ -259,8 +288,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             deduplicateCommunities(prev.map((c) => (c.id === payload.id ? payload : c)))
           );
         } else if (type === "NEW_MESSAGE") {
-          if (activeCommunityIdRef.current === payload.communityId) {
-            setMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]));
+          const msg = payload as ChatMessage;
+          if (activeCommunityIdRef.current === msg.communityId) {
+            setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+            if (currentUserRef.current) {
+              cloudStore.recordLastRead(msg.communityId, currentUserRef.current.id);
+            }
+          } else if (msg.senderId !== currentUserRef.current?.id && !msg.isSystem) {
+            // Realtime unread count bump for community card & nav badge!
+            setUnreadCounts((prev) => ({
+              ...prev,
+              [msg.communityId]: (prev[msg.communityId] || 0) + 1,
+            }));
+          }
+        } else if (type === "COMMUNITY_READ") {
+          const { communityId, userId } = payload || {};
+          if (currentUserRef.current?.id === userId) {
+            setUnreadCounts((prev) => {
+              if (!prev[communityId]) return prev;
+              const next = { ...prev };
+              delete next[communityId];
+              return next;
+            });
           }
         } else if (type === "MESSAGE_DELETED") {
           const { communityId, messageId } = payload || {};
@@ -307,10 +356,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
+    // Connect Supabase WebSocket Realtime for live cross-device unread notification badges
+    const cfg = getSupabaseConfig();
+    if (cfg && cfg.url && cfg.anonKey) {
+      try {
+        supabaseBridge.connectRealtime((evt) => {
+          if (evt.table === "messages" && evt.record) {
+            const rec = evt.record;
+            const commId = rec.community_id;
+            const senderId = rec.sender_id;
+            const isSystem = rec.is_system;
+            if (commId && senderId !== currentUserRef.current?.id && !isSystem) {
+              if (activeCommunityIdRef.current === commId) {
+                if (currentUserRef.current) {
+                  cloudStore.recordLastRead(commId, currentUserRef.current.id);
+                }
+              } else {
+                // Realtime badge bump without page reload!
+                setUnreadCounts((prev) => ({
+                  ...prev,
+                  [commId]: (prev[commId] || 0) + 1,
+                }));
+              }
+            }
+          }
+        });
+      } catch (e) {
+        console.warn("Supabase realtime init error:", e);
+      }
+    }
+
     return () => {
       broadcastRef.current?.close();
+      supabaseBridge.disconnectRealtime();
     };
   }, []);
+
+  // When activeCommunityId changes to non-null, clear its unread badge
+  useEffect(() => {
+    if (activeCommunityId) {
+      recordCommunityRead(activeCommunityId);
+    }
+  }, [activeCommunityId, recordCommunityRead]);
 
   // Sync communities periodically from cloud with non-destructive merge
   const fetchCommunities = useCallback(async () => {
@@ -353,6 +440,107 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, [fetchCommunities]);
+
+  // Compute unread counts per community based on last_read_at
+  const syncUnreadCounts = useCallback(async () => {
+    if (!currentUserRef.current || communities.length === 0) return;
+    const uid = currentUserRef.current.id;
+    const newCounts: Record<string, number> = {};
+
+    for (const comm of communities) {
+      if (activeCommunityIdRef.current === comm.id) {
+        newCounts[comm.id] = 0;
+        continue;
+      }
+
+      const lastReadAt = cloudStore.getLastRead(comm.id, uid);
+      const lastReadMs = lastReadAt ? new Date(lastReadAt).getTime() : 0;
+
+      const member = (comm.members || []).find((m) => m.userId === uid);
+      const storedJoin = typeof window !== "undefined" ? localStorage.getItem(`chamchi_join_${comm.id}_${uid}`) : null;
+      const joinIso = member?.joinedAt || storedJoin;
+      const joinMs = joinIso ? new Date(joinIso).getTime() - 3000 : 0;
+
+      const cacheKey = `chamchi_messages_${comm.id}`;
+      let msgs: ChatMessage[] = [];
+      const cached = typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null;
+      if (cached) {
+        try {
+          msgs = JSON.parse(cached);
+        } catch {}
+      }
+
+      const isJoined = (joinedCommunityIds || []).includes(comm.id);
+      if ((!msgs || msgs.length === 0) && isJoined) {
+        try {
+          msgs = await cloudStore.loadMessages(comm.id);
+        } catch {}
+      }
+
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        let count = 0;
+        for (const m of msgs) {
+          if (m.isSystem) continue;
+          if (m.senderId === uid) continue;
+          if ((m.readUserIds || []).includes(uid)) continue;
+
+          let msgMs = 0;
+          if (m.createdAt) {
+            msgMs = new Date(m.createdAt).getTime();
+          } else if (m.id && m.id.startsWith("msg-")) {
+            msgMs = parseInt(m.id.replace("msg-", "").split("-")[0], 10) || 0;
+          }
+
+          if (joinMs > 0 && msgMs > 0 && msgMs < joinMs) continue;
+
+          if (lastReadMs > 0) {
+            if (msgMs > lastReadMs) count++;
+          } else {
+            count++;
+          }
+        }
+        if (count > 0) {
+          newCounts[comm.id] = count;
+        }
+      }
+    }
+
+    setUnreadCounts((prev) => {
+      const merged = { ...prev };
+      for (const [cid, cnt] of Object.entries(newCounts)) {
+        merged[cid] = Math.max(merged[cid] || 0, cnt);
+      }
+      if (activeCommunityIdRef.current) {
+        delete merged[activeCommunityIdRef.current];
+      }
+      return merged;
+    });
+  }, [communities, joinedCommunityIds]);
+
+  useEffect(() => {
+    syncUnreadCounts();
+    const interval = setInterval(syncUnreadCounts, 8000);
+    const onFocus = () => syncUnreadCounts();
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+    }
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+      }
+    };
+  }, [syncUnreadCounts]);
+
+  const getCommunityUnreadCount = useCallback(
+    (communityId: string) => {
+      if (activeCommunityId === communityId) return 0;
+      return unreadCounts[communityId] || 0;
+    },
+    [activeCommunityId, unreadCounts]
+  );
+
+  const totalCommunityUnreadCount = Object.values(unreadCounts).reduce((acc, c) => acc + (c || 0), 0);
 
   // Sync messages periodically for active community
   useEffect(() => {
@@ -422,7 +610,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const dms = await cloudStore.loadDmMessages(convId);
         if (!isCancelled && Array.isArray(dms)) {
           setDmMessages(dms);
-          // Auto mark as read
           const unreadForMe = dms.filter(
             (m) => m.recipientId === currentUser.id && !m.readUserIds.includes(currentUser.id)
           );
@@ -606,6 +793,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
+    recordCommunityRead(communityId);
     setActiveDmUser(null);
     setActiveCommunityId(communityId);
     setActiveChannelId("general");
@@ -623,6 +811,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const existing = communities.find((c) => c.name.trim().toLowerCase() === normName);
     if (existing) {
       setActiveDmUser(null);
+      recordCommunityRead(existing.id);
       setActiveCommunityId(existing.id);
       setActiveChannelId("general");
       return existing;
@@ -672,6 +861,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
 
       setActiveDmUser(null);
+      recordCommunityRead(commId);
       setActiveCommunityId(commId);
       setActiveChannelId("general");
 
@@ -757,6 +947,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     setMessages((prev) => [...prev, newMsg]);
+    cloudStore.recordLastRead(activeCommunityId, currentUser.id);
+    recordCommunityRead(activeCommunityId);
+
     await cloudStore.saveMessage(activeCommunityId, newMsg);
 
     try {
@@ -807,6 +1000,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return m;
       })
     );
+    cloudStore.recordLastRead(communityId, uid);
     await cloudStore.markMessagesAsRead(communityId, messageIds, uid);
   }, []);
 
@@ -1128,6 +1322,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         markCommunityMessagesRead,
         deleteChatMessage,
         claimCommunityOwnership,
+        unreadCounts,
+        recordCommunityRead,
+        getCommunityUnreadCount,
+        totalCommunityUnreadCount,
         inspectedUser,
         setInspectedUser,
         inspectUser,

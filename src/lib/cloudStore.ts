@@ -1395,4 +1395,23 @@ export const cloudStore = {
     }
     return updated;
   },
+
+  recordLastRead(communityId: string, userId: string, timestamp?: string): string {
+    const time = timestamp || new Date().toISOString();
+    if (typeof window !== "undefined" && userId && communityId) {
+      try {
+        localStorage.setItem(`chamchi_last_read_${userId}_${communityId}`, time);
+      } catch {}
+    }
+    return time;
+  },
+
+  getLastRead(communityId: string, userId: string): string | null {
+    if (typeof window === "undefined" || !userId || !communityId) return null;
+    try {
+      return localStorage.getItem(`chamchi_last_read_${userId}_${communityId}`);
+    } catch {
+      return null;
+    }
+  },
 };

@@ -154,3 +154,15 @@ CREATE POLICY "Public Read Banners" ON storage.objects FOR SELECT USING (bucket_
 CREATE POLICY "Public Upload Banners" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'banners');
 CREATE POLICY "Public Read Media" ON storage.objects FOR SELECT USING (bucket_id = 'media');
 CREATE POLICY "Public Upload Media" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'media');
+
+-- 10. 커뮤니티별 마지막 접속 시간 (안 읽은 새 메시지 알림 배지 카운트용)
+CREATE TABLE IF NOT EXISTS public.community_reads (
+  user_id TEXT NOT NULL,
+  community_id TEXT NOT NULL,
+  last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, community_id)
+);
+ALTER TABLE public.community_reads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Reads Select" ON public.community_reads FOR SELECT USING (true);
+CREATE POLICY "Public Reads Insert" ON public.community_reads FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Reads Update" ON public.community_reads FOR UPDATE USING (true);
