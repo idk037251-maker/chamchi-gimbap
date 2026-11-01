@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useApp } from "@/context/AppContext";
+import { deduplicateCommunities } from "@/lib/communityUtils";
 import {
   X,
   PlusCircle,
@@ -39,7 +40,8 @@ export default function HamburgerDrawer() {
 
   if (!currentUser) return null;
 
-  const joinedCommunities = (communities || []).filter((c) =>
+  const dedupedCommunities = deduplicateCommunities(communities || []);
+  const joinedCommunities = dedupedCommunities.filter((c) =>
     (joinedCommunityIds || []).includes(c?.id)
   );
 
@@ -207,7 +209,7 @@ export default function HamburgerDrawer() {
               전체 커뮤니티 로비 (탐색)
             </span>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10">
-              {(communities || []).length}개
+              {dedupedCommunities.length}개
             </span>
           </button>
         </div>

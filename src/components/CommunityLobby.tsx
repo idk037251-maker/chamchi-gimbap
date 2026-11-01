@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useApp } from "@/context/AppContext";
+import { deduplicateCommunities } from "@/lib/communityUtils";
 import {
   Search,
   Users,
@@ -34,7 +35,8 @@ export default function CommunityLobby() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("전체");
 
-  const filteredCommunities = (communities || []).filter((comm) => {
+  const dedupedCommunities = deduplicateCommunities(communities || []);
+  const filteredCommunities = dedupedCommunities.filter((comm) => {
     if (!comm) return false;
     const matchesCategory =
       selectedCategory === "전체" || comm.category === selectedCategory;

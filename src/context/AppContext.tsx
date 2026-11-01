@@ -6,6 +6,7 @@ import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import { cloudStore } from "@/lib/cloudStore";
 import { filterProfanity } from "@/lib/profanityFilter";
 import { compressImage } from "@/lib/imageUtils";
+import { deduplicateCommunities } from "@/lib/communityUtils";
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
@@ -152,7 +153,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(savedComms);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setCommunities(parsed);
+            setCommunities(deduplicateCommunities(parsed));
           }
         } catch {}
       }
@@ -173,7 +174,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       bc.onmessage = (event) => {
         const { type, payload } = event.data || {};
         if (type === "NEW_COMMUNITY") {
-          setCommunities((prev) => (prev.some((c) => c.id === payload.id) ? prev : [payload, ...prev]));
+          setCommunities((prev) => deduplicateCommunities([payload, ...prev]));
         } else if (type === "COMMUNITY_DELETED") {
           setCommunities((prev) => prev.filter((c) => c.id !== payload));
           if (activeCommunityIdRef.current === payload) {
@@ -221,14 +222,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const comms = await cloudStore.loadCommunities();
       if (Array.isArray(comms) && comms.length > 0) {
-        setCommunities((prev) => {
-          const map = new Map<string, Community>();
-          prev.forEach((c) => map.set(c.id, c));
-          comms.forEach((c) => map.set(c.id, c));
-          const merged = Array.from(map.values());
-          saveLocal(STORAGE_KEYS.COMMUNITIES, merged);
-          return merged;
-        });
+        const deduped = deduplicateCommunities(comms);
+        setCommunities(deduped);
+        saveLocal(STORAGE_KEYS.COMMUNITIES, deduped);
 
         if (activeCommunityIdRef.current && currentUserRef.current) {
           const activeComm = comms.find((c) => c.id === activeCommunityIdRef.current);
@@ -470,6 +466,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (isCreatingRef.current) {
       throw new Error("이미 커뮤니티를 생성하는 중입니다.");
     }
+
+    const normName = data.name.trim().toLowerCase();
+    const existing = communities.find((c) => c.name.trim().toLowerCase() === normName);
+    if (existing) {
+      setActiveCommunityId(existing.id);
+      setActiveChannelId("general");
+      return existing;
+    }
+
     isCreatingRef.current = true;
 
     try {
@@ -506,12 +511,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
 
       // 1. Optimistically add to state and immediately switch to chat view
-      setCommunities((prev) => {
-        if (prev.some((c) => c.id === commId || c.name.trim() === newComm.name.trim())) {
-          return prev;
-        }
-        return [newComm, ...prev];
-      });
+      setCommunities((prev) => deduplicateCommunities([newComm, ...prev]));
 
       setJoinedCommunityIds((prev) => {
         const next = prev.includes(commId) ? prev : [...prev, commId];
@@ -524,8 +524,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // 2. Persist to Cloud DB
       const updatedList = await cloudStore.saveCommunity(newComm);
-      setCommunities(updatedList);
-      saveLocal(STORAGE_KEYS.COMMUNITIES, updatedList);
+      const deduped = deduplicateCommunities(updatedList);
+      setCommunities(deduped);
+      saveLocal(STORAGE_KEYS.COMMUNITIES, deduped);
 
       // 3. Broadcast across tabs
       try {

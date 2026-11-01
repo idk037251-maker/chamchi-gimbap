@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useApp } from "@/context/AppContext";
+import { deduplicateCommunities } from "@/lib/communityUtils";
 import {
   Menu,
   PlusCircle,
@@ -33,7 +34,8 @@ export default function TopNavigationBar() {
 
   if (!currentUser) return null;
 
-  const joinedCommunities = (communities || []).filter((c) =>
+  const dedupedCommunities = deduplicateCommunities(communities || []);
+  const joinedCommunities = dedupedCommunities.filter((c) =>
     (joinedCommunityIds || []).includes(c?.id)
   );
 

@@ -1,5 +1,6 @@
 import { Community, ChatMessage, UserProfile } from "@/types/chat";
 import { getSupabaseConfig, SupabaseConfig } from "./supabaseClient";
+import { deduplicateCommunities } from "./communityUtils";
 
 export interface StoredUser extends UserProfile {
   password: string;
@@ -8,8 +9,8 @@ export interface StoredUser extends UserProfile {
 const CLOUD_FALLBACK_BASE = "https://kvdb.io/UJi5qrxjVL5oMcMYSXCvLC";
 
 const CACHE_KEYS = {
-  COMMUNITIES: "chamchi_persistent_communities",
-  MESSAGES_PREFIX: "chamchi_persistent_msgs_",
+  COMMUNITIES: "chamchi_communities_v1",
+  MESSAGES_PREFIX: "chamchi_messages_v1_",
   USER_VAULT_PREFIX: "chamchi_user_vault_",
   USERS_DIRECTORY: "chamchi_users_directory",
 };
@@ -430,7 +431,8 @@ export const cloudStore = {
 
   // ------------------------------------------------------------- Communities
   async loadCommunities(): Promise<Community[]> {
-    const cached = getLocalCache<Community[]>(CACHE_KEYS.COMMUNITIES, []);
+    const rawCached = getLocalCache<Community[]>(CACHE_KEYS.COMMUNITIES, []);
+    const cached = deduplicateCommunities(rawCached);
     const cfg = getSupabaseConfig();
 
     if (cfg) {
@@ -443,13 +445,7 @@ export const cloudStore = {
           const rows = await res.json();
           if (Array.isArray(rows)) {
             const mapped = rows.map(mapDbCommunityToModel);
-            // Deduplicate
-            const seen = new Set<string>();
-            const unique = mapped.filter((c) => {
-              if (seen.has(c.id)) return false;
-              seen.add(c.id);
-              return true;
-            });
+            const unique = deduplicateCommunities(mapped);
             setLocalCache(CACHE_KEYS.COMMUNITIES, unique);
             return unique;
           }
@@ -468,13 +464,10 @@ export const cloudStore = {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Merge with local cache so newly created local communities are never lost
-          const commMap = new Map<string, Community>();
-          cached.forEach((c) => commMap.set(c.id, c));
-          data.forEach((c) => commMap.set(c.id, c));
-          const merged = Array.from(commMap.values());
-          setLocalCache(CACHE_KEYS.COMMUNITIES, merged);
-          return merged;
+          // Strictly deduplicate by ID and Name
+          const unique = deduplicateCommunities([...data, ...cached]);
+          setLocalCache(CACHE_KEYS.COMMUNITIES, unique);
+          return unique;
         }
       }
     } catch (e) {
@@ -485,16 +478,22 @@ export const cloudStore = {
   },
 
   async saveCommunity(newComm: Community): Promise<Community[]> {
-    // 1. Immediately persist to local cache so data is 100% immune to network/redeploy loss
-    const cached = getLocalCache<Community[]>(CACHE_KEYS.COMMUNITIES, []);
-    const existingIdx = cached.findIndex((c) => c.id === newComm.id || c.name.trim() === newComm.name.trim());
-    let nextCached = cached;
+    // 1. Immediately persist to local cache strictly deduplicated
+    const cached = deduplicateCommunities(getLocalCache<Community[]>(CACHE_KEYS.COMMUNITIES, []));
+    const normName = newComm.name.trim().toLowerCase();
+    const existingIdx = cached.findIndex(
+      (c) => c.id === newComm.id || c.name.trim().toLowerCase() === normName
+    );
+
+    let nextCached: Community[];
     if (existingIdx >= 0) {
-      nextCached[existingIdx] = newComm;
+      nextCached = [...cached];
+      nextCached[existingIdx] = { ...cached[existingIdx], ...newComm };
     } else {
       nextCached = [newComm, ...cached];
     }
-    setLocalCache(CACHE_KEYS.COMMUNITIES, nextCached);
+    const deduped = deduplicateCommunities(nextCached);
+    setLocalCache(CACHE_KEYS.COMMUNITIES, deduped);
 
     // 2. Persist to Supabase if configured
     const cfg = getSupabaseConfig();
@@ -512,7 +511,7 @@ export const cloudStore = {
       } catch (e) {
         console.error("Failed to persist community to Supabase", e);
       }
-      return nextCached;
+      return deduped;
     }
 
     // 3. Fallback cloud save
@@ -520,11 +519,11 @@ export const cloudStore = {
       await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_communities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextCached),
+        body: JSON.stringify(deduped),
       });
     } catch {}
 
-    return nextCached;
+    return deduped;
   },
 
   async deleteCommunity(communityId: string): Promise<Community[]> {
