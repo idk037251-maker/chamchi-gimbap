@@ -1,13 +1,15 @@
 -- ==============================================================================
--- KakaoCord 프로덕션 라이브 Supabase 스키마 (가짜 더미 데이터 없는 순수 100% 라이브)
+-- 참치김밥(Chamchi Gimbap) 프로덕션 라이브 Supabase 스키마
 -- ==============================================================================
 
--- 1. 유저 프로필 테이블 (실제 가입 유저의 이름, 직접 입력한 대명사, 아바타, 배너, 소개글 영구 보관)
+-- 1. 유저 프로필 테이블 (ID 중복 방지 UNIQUE 제약 조건 포함)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id TEXT PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,             -- 사이트 전용 고유 아이디 (UNIQUE 제약조건)
+  password_hash TEXT NOT NULL,               -- 계정 비밀번호 (보안 저장)
   email TEXT NOT NULL,
   name TEXT NOT NULL,
-  pronouns TEXT NOT NULL,                    -- 유저가 직접 입력/선택한 대명사
+  pronouns TEXT NOT NULL,                    -- 유저가 직접 입력한 대명사
   avatar_url TEXT DEFAULT '',               -- 스토리지 아바타 공개 URL
   banner_url TEXT DEFAULT '',               -- 스토리지 배너 공개 URL
   banner_color TEXT DEFAULT 'linear-gradient(135deg, #5865F2 0%, #1e1f22 100%)',
@@ -18,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. 실제 유저가 개설한 커뮤니티 테이블
+-- 2. 실제 유저가 개설한 커뮤니티 테이블 (멤버 및 강퇴 목록 지원)
 CREATE TABLE IF NOT EXISTS public.communities (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -30,6 +32,9 @@ CREATE TABLE IF NOT EXISTS public.communities (
   member_count INT DEFAULT 1,
   online_count INT DEFAULT 1,
   created_by TEXT NOT NULL,
+  created_by_id TEXT,
+  members JSONB DEFAULT '[]'::jsonb,         -- 참여 멤버 목록
+  kicked_user_ids JSONB DEFAULT '[]'::jsonb, -- 방장에 의해 강퇴된 유저 ID 목록 (재입장 차단)
   tags JSONB DEFAULT '["#오픈채팅"]'::jsonb,
   channels JSONB DEFAULT '[{"id":"general","name":"자유-수다방","type":"text","description":"메인 대화 채널"}]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW()

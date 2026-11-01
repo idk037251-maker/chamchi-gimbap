@@ -14,12 +14,16 @@ import {
   Upload,
   Cloud,
   Loader2,
+  Lock,
+  KeyRound,
+  AlertCircle,
 } from "lucide-react";
 
 export default function ProfileSettingsModal() {
   const {
     currentUser,
     updateProfile,
+    changePassword,
     uploadAvatarOrBannerFile,
     isCloudConnected,
     isProfileModalOpen,
@@ -37,6 +41,14 @@ export default function ProfileSettingsModal() {
   const [status, setStatus] = useState<UserStatus>("online");
   const [isUploading, setIsUploading] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+
+  // Password change states
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState("");
+  const [isChangingPw, setIsChangingPw] = useState(false);
 
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
   const bannerFileInputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +104,42 @@ export default function ProfileSettingsModal() {
       console.error("Upload error:", err);
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleChangePassword = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    setPwError("");
+    setPwSuccess("");
+
+    if (!currentPassword) {
+      setPwError("현재 비밀번호를 입력해 주세요.");
+      return;
+    }
+    if (!newPassword || newPassword.length < 4) {
+      setPwError("새 비밀번호는 4자 이상 입력해 주세요.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError("새 비밀번호와 확인 입력이 일치하지 않습니다.");
+      return;
+    }
+
+    try {
+      setIsChangingPw(true);
+      const res = await changePassword(currentPassword, newPassword);
+      if (!res.success) {
+        setPwError(res.error || "비밀번호 변경에 실패했습니다.");
+      } else {
+        setPwSuccess("비밀번호가 성공적으로 변경되었습니다!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      }
+    } catch (err: any) {
+      setPwError(err.message || "오류가 발생했습니다.");
+    } finally {
+      setIsChangingPw(false);
     }
   };
 
@@ -378,6 +426,110 @@ export default function ProfileSettingsModal() {
                 placeholder="나를 소개하는 글을 작성해 주세요."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] border border-slate-200 dark:border-white/10 text-sm focus:outline-none focus:ring-2 focus:ring-[#5865F2] resize-none"
               />
+            </div>
+          </div>
+
+          {/* Password Change Section */}
+          <div className="p-5 rounded-2xl bg-slate-100/80 dark:bg-[#1e1f22] border border-slate-200 dark:border-white/10 space-y-3.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-[#5865F2]/15 text-[#5865F2] dark:text-indigo-400 flex items-center justify-center">
+                <KeyRound className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800 dark:text-slate-100">
+                  비밀번호 변경
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  현재 비밀번호를 검증한 후 안전하게 새 비밀번호로 갱신합니다.
+                </p>
+              </div>
+            </div>
+
+            {pwError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{pwError}</span>
+              </div>
+            )}
+
+            {pwSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{pwSuccess}</span>
+              </div>
+            )}
+
+            <div className="space-y-2.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  현재 비밀번호
+                </label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="기존 비밀번호 입력"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-[#2b2d31] border border-slate-200 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                    새 비밀번호 (4자 이상)
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="새 비밀번호 입력"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-[#2b2d31] border border-slate-200 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                    새 비밀번호 확인
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="새 비밀번호 재입력"
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-white dark:bg-[#2b2d31] border border-slate-200 dark:border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-[#5865F2]"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                disabled={isChangingPw || !currentPassword || !newPassword}
+                onClick={handleChangePassword}
+                className="px-4 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white text-xs font-bold shadow-sm transition flex items-center gap-1.5"
+              >
+                {isChangingPw ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>변경 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>비밀번호 변경하기</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 

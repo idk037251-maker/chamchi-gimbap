@@ -526,11 +526,27 @@ export default function AuthOnboarding() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-4 px-5 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white font-extrabold text-sm shadow-lg transition flex items-center justify-center gap-2"
+                className="w-full py-4 px-5 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white font-extrabold text-sm shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <span>{isLoading ? "계정 생성 중..." : "🚀 계정 만들고 커뮤니티 입장하기"}</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              <div className="text-center pt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  이미 가입한 계정이 있으신가요?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTab("login");
+                      setError("");
+                    }}
+                    className="text-[#5865F2] font-bold hover:underline ml-1"
+                  >
+                    기존 계정으로 로그인하기
+                  </button>
+                </p>
+              </div>
             </form>
           ) : (
             /* Tab 2: Login Form */

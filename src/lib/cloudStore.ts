@@ -34,7 +34,7 @@ export const cloudStore = {
       const users = await this.loadUsers();
       const uname = userData.username.trim().toLowerCase();
       if (!uname) return { success: false, error: "아이디를 입력해 주세요." };
-      if (users[uname]) return { success: false, error: "이미 존재하는 아이디입니다." };
+      if (users[uname]) return { success: false, error: "이미 사용 중인 아이디입니다." };
 
       const newUser: StoredUser = {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -106,6 +106,36 @@ export const cloudStore = {
     }
   },
 
+  async changePassword(
+    username: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const users = await this.loadUsers();
+      const uname = username.trim().toLowerCase();
+      const user = users[uname];
+      if (!user) {
+        return { success: false, error: "존재하지 않는 사용자 계정입니다." };
+      }
+      if (user.password !== currentPassword) {
+        return { success: false, error: "현재 비밀번호가 일치하지 않습니다." };
+      }
+      if (!newPassword || newPassword.length < 4) {
+        return { success: false, error: "새 비밀번호는 4자 이상이어야 합니다." };
+      }
+      users[uname] = { ...user, password: newPassword };
+      await fetch(`${CLOUD_BASE}/chamchi_users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(users),
+      });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: "비밀번호 변경 처리 실패: " + err.message };
+    }
+  },
+
   async loadCommunities(): Promise<Community[]> {
     try {
       const res = await fetch(`${CLOUD_BASE}/chamchi_communities?_t=${Date.now()}`, {
@@ -118,15 +148,21 @@ export const cloudStore = {
       // Strict deduplication by ID and normalized Name + Creator
       const seenIds = new Set<string>();
       const seenNames = new Set<string>();
-      return data.filter((c) => {
-        if (!c || !c.id) return false;
-        if (seenIds.has(c.id)) return false;
-        const normKey = `${(c.name || "").trim().toLowerCase()}___${(c.createdBy || "").trim().toLowerCase()}`;
-        if (seenNames.has(normKey)) return false;
-        seenIds.add(c.id);
-        seenNames.add(normKey);
-        return true;
-      });
+      return data
+        .filter((c) => {
+          if (!c || !c.id) return false;
+          if (seenIds.has(c.id)) return false;
+          const normKey = `${(c.name || "").trim().toLowerCase()}___${(c.createdBy || "").trim().toLowerCase()}`;
+          if (seenNames.has(normKey)) return false;
+          seenIds.add(c.id);
+          seenNames.add(normKey);
+          return true;
+        })
+        .map((c) => ({
+          ...c,
+          members: Array.isArray(c.members) ? c.members : [],
+          kickedUserIds: Array.isArray(c.kickedUserIds) ? c.kickedUserIds : [],
+        }));
     } catch {
       return [];
     }
@@ -184,6 +220,115 @@ export const cloudStore = {
     } catch (e) {
       console.error("Failed to delete community in cloud:", e);
       return [];
+    }
+  },
+
+  async joinCommunity(
+    communityId: string,
+    member: { userId: string; username?: string; name: string; pronouns: string; avatarUrl: string }
+  ): Promise<{ success: boolean; error?: string; community?: Community }> {
+    try {
+      const current = await this.loadCommunities();
+      const commIdx = current.findIndex((c) => c.id === communityId);
+      if (commIdx < 0) return { success: false, error: "존재하지 않는 커뮤니티입니다." };
+
+      const comm = current[commIdx];
+      // Check if kicked
+      if ((comm.kickedUserIds || []).includes(member.userId)) {
+        return { success: false, error: "해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다." };
+      }
+
+      const existingMembers = comm.members || [];
+      const alreadyMember = existingMembers.some((m) => m.userId === member.userId);
+      let updatedMembers = existingMembers;
+      if (!alreadyMember) {
+        const isCreator =
+          comm.createdById === member.userId ||
+          comm.createdBy === member.name ||
+          (!!member.username && comm.createdBy === member.username);
+
+        updatedMembers = [
+          ...existingMembers,
+          {
+            userId: member.userId,
+            username: member.username,
+            name: member.name,
+            pronouns: member.pronouns,
+            avatarUrl: member.avatarUrl,
+            role: isCreator ? "방장" : "멤버",
+            joinedAt: new Date().toISOString(),
+          },
+        ];
+      }
+
+      const updatedComm: Community = {
+        ...comm,
+        members: updatedMembers,
+        memberCount: Math.max(1, updatedMembers.length),
+      };
+
+      current[commIdx] = updatedComm;
+
+      await fetch(`${CLOUD_BASE}/chamchi_communities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(current),
+      });
+
+      return { success: true, community: updatedComm };
+    } catch (err: any) {
+      return { success: false, error: "커뮤니티 참여 처리 실패: " + err.message };
+    }
+  },
+
+  async kickMember(
+    communityId: string,
+    targetUserId: string,
+    targetName?: string
+  ): Promise<{ success: boolean; error?: string; community?: Community }> {
+    try {
+      const current = await this.loadCommunities();
+      const commIdx = current.findIndex((c) => c.id === communityId);
+      if (commIdx < 0) return { success: false, error: "존재하지 않는 커뮤니티입니다." };
+
+      const comm = current[commIdx];
+      const updatedMembers = (comm.members || []).filter((m) => m.userId !== targetUserId);
+      const updatedKicked = Array.from(new Set([...(comm.kickedUserIds || []), targetUserId]));
+
+      const updatedComm: Community = {
+        ...comm,
+        members: updatedMembers,
+        kickedUserIds: updatedKicked,
+        memberCount: Math.max(1, updatedMembers.length),
+      };
+
+      current[commIdx] = updatedComm;
+
+      await fetch(`${CLOUD_BASE}/chamchi_communities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(current),
+      });
+
+      // Post system announcement message into chat
+      const sysMsg: ChatMessage = {
+        id: `sys-kick-${Date.now()}`,
+        communityId,
+        channelId: "general",
+        senderId: "system",
+        senderName: "시스템",
+        senderPronouns: "공지",
+        senderAvatar: "",
+        content: `🚫 ${targetName || "사용자"}님이 방장에 의해 커뮤니티에서 내보내졌습니다.`,
+        timestamp: new Date().toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }),
+        reactions: [],
+        isSystem: true,
+      };
+      await this.saveMessage(communityId, sysMsg);
+
+      return { success: true, community: updatedComm };
+    } catch (err: any) {
+      return { success: false, error: "멤버 강퇴 처리 실패: " + err.message };
     }
   },
 

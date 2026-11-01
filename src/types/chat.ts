@@ -23,6 +23,16 @@ export interface Channel {
   description: string;
 }
 
+export interface CommunityMember {
+  userId: string;
+  username?: string;
+  name: string;
+  pronouns: string;
+  avatarUrl: string;
+  role: "방장" | "부방장" | "멤버";
+  joinedAt: string;
+}
+
 export interface Community {
   id: string;
   name: string;
@@ -38,6 +48,8 @@ export interface Community {
   createdAt: string;
   tags: string[];
   channels: Channel[];
+  members?: CommunityMember[];
+  kickedUserIds?: string[];
 }
 
 export interface Reaction {

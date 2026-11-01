@@ -46,6 +46,7 @@ interface AppContextType {
     statusMessage: string;
   }) => Promise<{ success: boolean; error?: string }>;
   loginSiteAccount: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   loginOrRegister: (user: UserProfile) => void;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   uploadAvatarOrBannerFile: (bucket: "avatars" | "banners", file: File) => Promise<string>;
@@ -66,9 +67,10 @@ interface AppContextType {
   // Communities & Chat
   communities: Community[];
   joinedCommunityIds: string[];
-  joinCommunity: (communityId: string) => void;
+  joinCommunity: (communityId: string) => Promise<boolean>;
   createCommunity: (data: NewCommunityInput) => Promise<Community>;
   deleteCommunity: (communityId: string) => Promise<boolean>;
+  kickMember: (communityId: string, targetUserId: string, targetName?: string) => Promise<boolean>;
   messages: ChatMessage[];
   sendMessage: (content: string, attachmentUrl?: string) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => void;
@@ -121,6 +123,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const broadcastRef = useRef<BroadcastChannel | null>(null);
   const activeCommunityIdRef = useRef<string | null>(null);
   activeCommunityIdRef.current = activeCommunityId;
+  const currentUserRef = useRef<UserProfile | null>(null);
+  currentUserRef.current = currentUser;
 
   // Initialize from LocalStorage and Cloud
   useEffect(() => {
@@ -156,6 +160,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (activeCommunityIdRef.current === payload.communityId) {
             setMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]));
           }
+        } else if (type === "MEMBER_KICKED") {
+          const { communityId, userId } = payload || {};
+          setCommunities((prev) =>
+            prev.map((c) => {
+              if (c.id !== communityId) return c;
+              const nextMembers = (c.members || []).filter((m) => m.userId !== userId);
+              const nextKicked = Array.from(new Set([...(c.kickedUserIds || []), userId]));
+              return {
+                ...c,
+                members: nextMembers,
+                kickedUserIds: nextKicked,
+                memberCount: Math.max(1, nextMembers.length),
+              };
+            })
+          );
+          if (currentUserRef.current?.id === userId && activeCommunityIdRef.current === communityId) {
+            setActiveCommunityId(null);
+            setJoinedCommunityIds((prev) => {
+              const next = prev.filter((id) => id !== communityId);
+              saveLocal(STORAGE_KEYS.JOINED, next);
+              return next;
+            });
+            alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
+          }
         }
       };
     }
@@ -174,6 +202,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const comms = await cloudStore.loadCommunities();
         if (!isCancelled) {
           setCommunities(comms);
+          if (activeCommunityIdRef.current && currentUserRef.current) {
+            const activeComm = comms.find((c) => c.id === activeCommunityIdRef.current);
+            if (activeComm && (activeComm.kickedUserIds || []).includes(currentUserRef.current.id)) {
+              setActiveCommunityId(null);
+              setJoinedCommunityIds((prev) => {
+                const next = prev.filter((id) => id !== activeCommunityIdRef.current);
+                saveLocal(STORAGE_KEYS.JOINED, next);
+                return next;
+              });
+              alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
+            }
+          }
         }
       } catch (err) {
         console.error("Failed to sync communities from cloud", err);
@@ -311,15 +351,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const joinCommunity = (communityId: string) => {
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!currentUser?.username) {
+      return { success: false, error: "로그인된 계정 정보를 확인할 수 없습니다." };
+    }
+    return await cloudStore.changePassword(currentUser.username, currentPassword, newPassword);
+  };
+
+  const joinCommunity = async (communityId: string): Promise<boolean> => {
+    if (!currentUser) return false;
+
+    // Check if user is kicked from this community
+    const targetComm = communities.find((c) => c.id === communityId);
+    if (targetComm && (targetComm.kickedUserIds || []).includes(currentUser.id)) {
+      alert("해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다.");
+      return false;
+    }
+
+    // Call cloudStore to add to members and persist
+    const res = await cloudStore.joinCommunity(communityId, {
+      userId: currentUser.id,
+      username: currentUser.username,
+      name: currentUser.name,
+      pronouns: currentUser.pronouns,
+      avatarUrl: currentUser.avatarUrl,
+    });
+
+    if (!res.success) {
+      alert(res.error || "입장 처리에 실패했습니다.");
+      return false;
+    }
+
+    if (res.community) {
+      const updated = res.community;
+      setCommunities((prev) => prev.map((c) => (c.id === communityId ? updated : c)));
+    }
+
     setJoinedCommunityIds((prev) => {
       const next = prev.includes(communityId) ? prev : [...prev, communityId];
       saveLocal(STORAGE_KEYS.JOINED, next);
       return next;
     });
+
     // Immediately navigate to the community's chat room!
     setActiveCommunityId(communityId);
     setActiveChannelId("general");
+    return true;
   };
 
   const isCreatingRef = useRef(false);
@@ -347,6 +424,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString().slice(0, 10),
         tags: data.tags || [],
         channels: [{ id: "general", name: "자유-대화방", type: "text", description: "메인 대화 채널" }],
+        members: currentUser
+          ? [
+              {
+                userId: currentUser.id,
+                username: currentUser.username,
+                name: currentUser.name,
+                pronouns: currentUser.pronouns,
+                avatarUrl: currentUser.avatarUrl,
+                role: "방장",
+                joinedAt: new Date().toISOString(),
+              },
+            ]
+          : [],
+        kickedUserIds: [],
       };
 
       // 1. Optimistically add to state and immediately switch to chat view
@@ -379,6 +470,44 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } finally {
       isCreatingRef.current = false;
     }
+  };
+
+  const kickMember = async (
+    communityId: string,
+    targetUserId: string,
+    targetName?: string
+  ): Promise<boolean> => {
+    const res = await cloudStore.kickMember(communityId, targetUserId, targetName);
+    if (!res.success) {
+      alert(res.error || "강퇴 처리에 실패했습니다.");
+      return false;
+    }
+
+    if (res.community) {
+      const updated = res.community;
+      setCommunities((prev) => prev.map((c) => (c.id === communityId ? updated : c)));
+    }
+
+    // Broadcast kick across all tabs
+    try {
+      broadcastRef.current?.postMessage({
+        type: "MEMBER_KICKED",
+        payload: { communityId, userId: targetUserId, targetName },
+      });
+    } catch {}
+
+    // If local user is targetUserId, kick out
+    if (currentUser?.id === targetUserId && activeCommunityId === communityId) {
+      setActiveCommunityId(null);
+      setJoinedCommunityIds((prev) => {
+        const next = prev.filter((id) => id !== communityId);
+        saveLocal(STORAGE_KEYS.JOINED, next);
+        return next;
+      });
+      alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
+    }
+
+    return true;
   };
 
   const sendMessage = async (content: string, attachmentUrl?: string) => {
@@ -485,6 +614,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         authError,
         registerSiteAccount,
         loginSiteAccount,
+        changePassword,
         loginOrRegister,
         updateProfile,
         uploadAvatarOrBannerFile,
@@ -504,6 +634,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         joinCommunity,
         createCommunity,
         deleteCommunity,
+        kickMember,
         messages,
         sendMessage,
         toggleReaction,

@@ -18,6 +18,8 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
+  UserX,
+  Crown,
 } from "lucide-react";
 
 export default function CommunityChatRoom() {
@@ -31,6 +33,7 @@ export default function CommunityChatRoom() {
     sendMessage,
     toggleReaction,
     deleteCommunity,
+    kickMember,
     currentUser,
   } = useApp();
 
@@ -39,6 +42,8 @@ export default function CommunityChatRoom() {
   const [showMembersSidebar, setShowMembersSidebar] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [kickTarget, setKickTarget] = useState<{ userId: string; name: string } | null>(null);
+  const [isKicking, setIsKicking] = useState(false);
   const [inspectedUser, setInspectedUser] = useState<{
     name: string;
     pronouns: string;
@@ -86,6 +91,14 @@ export default function CommunityChatRoom() {
       community.createdBy === currentUser.name ||
       (!!currentUser.username && community.createdBy === currentUser.username));
 
+  // Auto-kick listener for current user
+  useEffect(() => {
+    if (community && currentUser && (community.kickedUserIds || []).includes(currentUser.id)) {
+      alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
+      setActiveCommunityId(null);
+    }
+  }, [community, currentUser, setActiveCommunityId]);
+
   const handleDeleteCommunity = async () => {
     if (!isOwner || isDeleting) return;
     try {
@@ -96,6 +109,19 @@ export default function CommunityChatRoom() {
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleKickConfirm = async () => {
+    if (!kickTarget || !community || !isOwner || isKicking) return;
+    try {
+      setIsKicking(true);
+      await kickMember(community.id, kickTarget.userId, kickTarget.name);
+    } catch (err) {
+      console.error("Failed to kick member", err);
+    } finally {
+      setIsKicking(false);
+      setKickTarget(null);
     }
   };
 
@@ -116,14 +142,62 @@ export default function CommunityChatRoom() {
     }
   };
 
-  // Collect unique active members in this room
-  const activeParticipants = Array.from(
-    new Map(
-      roomMessages
-        .filter((m) => !m.isSystem)
-        .map((m) => [m.senderId, { id: m.senderId, name: m.senderName, pronouns: m.senderPronouns, avatar: m.senderAvatar, role: m.senderRole }])
-    ).values()
-  );
+  // Deduplicate and aggregate community members
+  const memberMap = new Map<string, { userId: string; username?: string; name: string; pronouns: string; avatarUrl: string; role: string }>();
+
+  // 1. Current user
+  if (currentUser) {
+    const isMeOwner =
+      community.createdById === currentUser.id ||
+      community.createdBy === currentUser.name ||
+      (!!currentUser.username && community.createdBy === currentUser.username);
+    memberMap.set(currentUser.id, {
+      userId: currentUser.id,
+      username: currentUser.username,
+      name: currentUser.name,
+      pronouns: currentUser.pronouns,
+      avatarUrl: currentUser.avatarUrl,
+      role: isMeOwner ? "방장" : "멤버",
+    });
+  }
+
+  // 2. Stored community members
+  (community.members || []).forEach((m) => {
+    if (!memberMap.has(m.userId)) {
+      const isMemOwner =
+        m.userId === community.createdById ||
+        m.name === community.createdBy ||
+        (!!m.username && m.username === community.createdBy);
+      memberMap.set(m.userId, {
+        userId: m.userId,
+        username: m.username,
+        name: m.name,
+        pronouns: m.pronouns,
+        avatarUrl: m.avatarUrl,
+        role: isMemOwner ? "방장" : (m.role || "멤버"),
+      });
+    }
+  });
+
+  // 3. Message participants
+  roomMessages.forEach((m) => {
+    if (!m.isSystem && m.senderId && !memberMap.has(m.senderId)) {
+      const isSenderOwner =
+        m.senderId === community.createdById ||
+        m.senderName === community.createdBy;
+      memberMap.set(m.senderId, {
+        userId: m.senderId,
+        name: m.senderName,
+        pronouns: m.senderPronouns,
+        avatarUrl: m.senderAvatar,
+        role: isSenderOwner ? "방장" : (m.senderRole || "멤버"),
+      });
+    }
+  });
+
+  // Filter out kicked users
+  const kickedSet = new Set(community.kickedUserIds || []);
+  const displayMembers = Array.from(memberMap.values()).filter((m) => !kickedSet.has(m.userId));
 
   return (
     <div className="flex-1 flex overflow-hidden bg-white dark:bg-[#313338] text-slate-900 dark:text-slate-100 relative">
@@ -219,14 +293,18 @@ export default function CommunityChatRoom() {
 
             <button
               onClick={() => setShowMembersSidebar((prev) => !prev)}
-              className={`p-2 rounded-xl border transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
                 showMembersSidebar
-                  ? "bg-[#5865F2] text-white border-[#5865F2]"
-                  : "bg-slate-100 dark:bg-[#2b2d31] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10"
+                  ? "bg-[#5865F2] text-white border-[#5865F2] shadow-xs"
+                  : "bg-slate-100 dark:bg-[#2b2d31] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10"
               }`}
-              title="참여 멤버 보기"
+              title="참여 멤버 목록"
             >
-              <Users className="w-4 h-4" />
+              <Users className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">멤버</span>
+              <span className="text-[11px] font-extrabold px-1.5 py-0.2 bg-black/15 dark:bg-white/15 rounded-full">
+                {displayMembers.length}
+              </span>
             </button>
 
             {/* Owner-only Delete Community Button */}
@@ -403,38 +481,76 @@ export default function CommunityChatRoom() {
 
       {/* 3. Right Members Sidebar */}
       {showMembersSidebar && (
-        <aside className="w-64 flex flex-col bg-slate-100 dark:bg-[#2b2d31] border-l border-slate-200 dark:border-white/10 p-4 overflow-y-auto flex-shrink-0">
+        <aside className="w-72 flex flex-col bg-slate-100 dark:bg-[#2b2d31] border-l border-slate-200 dark:border-white/10 p-4 overflow-y-auto flex-shrink-0 animate-in slide-in-from-right duration-150">
           <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-3 flex items-center justify-between">
-            <span>대화 참여자 ({activeParticipants.length || 1})</span>
-            <button onClick={() => setShowMembersSidebar(false)}>
+            <span className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-[#5865F2]" />
+              참여자 목록 ({displayMembers.length}명)
+            </span>
+            <button
+              onClick={() => setShowMembersSidebar(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+            >
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="space-y-2">
-            {/* Current user */}
-            <div className="p-2 rounded-xl bg-white dark:bg-[#1e1f22] flex items-center gap-2.5">
-              <img src={currentUser.avatarUrl} alt="" className="w-8 h-8 rounded-xl object-cover bg-slate-700" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <p className="font-bold text-xs truncate">{currentUser.name}</p>
-                  <span className="text-[9px] font-extrabold bg-[#5865F2] text-white px-1 rounded">나</span>
-                </div>
-                <p className="text-[10px] text-slate-400 truncate">{currentUser.pronouns}</p>
-              </div>
-            </div>
 
-            {/* Other participants */}
-            {activeParticipants
-              .filter((p) => p.id !== currentUser.id)
-              .map((p) => (
-                <div key={p.id} className="p-2 rounded-xl hover:bg-white dark:hover:bg-[#1e1f22] flex items-center gap-2.5 transition">
-                  <img src={p.avatar} alt="" className="w-8 h-8 rounded-xl object-cover bg-slate-700" />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-bold text-xs truncate">{p.name}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{p.pronouns}</p>
+          <div className="space-y-2">
+            {displayMembers.map((member) => {
+              const isMe = member.userId === currentUser.id;
+              const isMemberOwner = member.role === "방장";
+
+              return (
+                <div
+                  key={member.userId}
+                  className={`p-2.5 rounded-2xl flex items-center justify-between gap-2 transition ${
+                    isMe
+                      ? "bg-white dark:bg-[#1e1f22] border border-slate-200 dark:border-white/10 shadow-xs"
+                      : "hover:bg-white dark:hover:bg-[#1e1f22] border border-transparent hover:border-slate-200 dark:hover:border-white/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <img
+                      src={member.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(member.name)}`}
+                      alt={member.name}
+                      className="w-8 h-8 rounded-xl object-cover bg-slate-700 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-xs truncate text-slate-900 dark:text-slate-100">
+                          {member.name}
+                        </p>
+                        {isMe && (
+                          <span className="text-[9px] font-extrabold bg-[#5865F2] text-white px-1.5 py-0.2 rounded-full">
+                            나
+                          </span>
+                        )}
+                        {isMemberOwner && (
+                          <span className="text-[9px] font-extrabold bg-[#FEE500] text-[#3C1E1E] px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shadow-2xs">
+                            <Crown className="w-2.5 h-2.5" />
+                            방장
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 truncate">{member.pronouns}</p>
+                    </div>
                   </div>
+
+                  {/* Owner-only kick button */}
+                  {isOwner && !isMe && !isMemberOwner && (
+                    <button
+                      type="button"
+                      onClick={() => setKickTarget({ userId: member.userId, name: member.name })}
+                      className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 text-[11px] font-bold flex items-center gap-1 transition shrink-0"
+                      title="방장 전용: 해당 사용자를 커뮤니티에서 내보냅니다."
+                    >
+                      <UserX className="w-3 h-3" />
+                      <span>강퇴</span>
+                    </button>
+                  )}
                 </div>
-              ))}
+              );
+            })}
           </div>
         </aside>
       )}
@@ -516,6 +632,62 @@ export default function CommunityChatRoom() {
                   <>
                     <Trash2 className="w-4 h-4" />
                     <span>영구 삭제 승인</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kick Member Confirmation Modal (Owner Only) */}
+      {kickTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-[#2b2d31] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 space-y-4">
+            <div className="flex items-center gap-3 text-rose-500">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 flex items-center justify-center flex-shrink-0">
+                <UserX className="w-5 h-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                  멤버 내보내기 (강퇴)
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  방장({currentUser.name}) 전용 커뮤니티 관리 권한
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 leading-relaxed font-medium">
+              ⚠️ <strong>&quot;{kickTarget.name}&quot;</strong> 사용자를 커뮤니티에서 내보내시겠습니까?
+              <br />
+              해당 사용자는 <strong>커뮤니티 채팅방에서 즉시 퇴장</strong> 처리되며, 재입장이 차단됩니다.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isKicking}
+                onClick={() => setKickTarget(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e1f22] transition disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={isKicking}
+                onClick={handleKickConfirm}
+                className="px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isKicking ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>내보내는 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserX className="w-4 h-4" />
+                    <span>내보내기 승인</span>
                   </>
                 )}
               </button>

@@ -28,6 +28,7 @@ export default function CommunityLobby() {
     joinedCommunityIds,
     joinCommunity,
     setIsCreateModalOpen,
+    currentUser,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -135,17 +136,34 @@ export default function CommunityLobby() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredCommunities.map((comm) => {
               const isJoined = joinedCommunityIds.includes(comm.id);
+              const isKicked = !!currentUser && (comm.kickedUserIds || []).includes(currentUser.id);
 
               return (
                 <div
                   key={comm.id}
-                  onClick={() => joinCommunity(comm.id)}
+                  onClick={() => {
+                    if (isKicked) {
+                      alert("해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다.");
+                      return;
+                    }
+                    joinCommunity(comm.id);
+                  }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") joinCommunity(comm.id);
+                    if (e.key === "Enter" || e.key === " ") {
+                      if (isKicked) {
+                        alert("해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다.");
+                        return;
+                      }
+                      joinCommunity(comm.id);
+                    }
                   }}
-                  className="group cursor-pointer rounded-3xl overflow-hidden bg-white dark:bg-[#2b2d31] border border-slate-200/90 dark:border-white/10 hover:border-[#5865F2] dark:hover:border-[#5865F2] shadow-sm hover:shadow-xl transition-all duration-200 flex flex-col justify-between"
+                  className={`group cursor-pointer rounded-3xl overflow-hidden bg-white dark:bg-[#2b2d31] border transition-all duration-200 flex flex-col justify-between ${
+                    isKicked
+                      ? "border-rose-500/30 opacity-70 cursor-not-allowed"
+                      : "border-slate-200/90 dark:border-white/10 hover:border-[#5865F2] dark:hover:border-[#5865F2] shadow-sm hover:shadow-xl"
+                  }`}
                 >
                   <div>
                     {/* Banner */}
@@ -156,11 +174,18 @@ export default function CommunityLobby() {
                       <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/45 text-white backdrop-blur-md">
                         {comm.category}
                       </span>
-                      {isJoined && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
-                          참여 중
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {isKicked && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
+                            입장 차단 (강퇴됨)
+                          </span>
+                        )}
+                        {isJoined && !isKicked && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
+                            참여 중
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Content */}
