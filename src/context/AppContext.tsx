@@ -6,6 +6,11 @@ import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import { cloudStore } from "@/lib/cloudStore";
 import { filterProfanity } from "@/lib/profanityFilter";
 import { compressImage } from "@/lib/imageUtils";
+import {
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  clearSupabaseConfig,
+} from "@/lib/supabaseClient";
 
 type NewCommunityInput = {
   name: string;
@@ -115,6 +120,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [joinedCommunityIds, setJoinedCommunityIds] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [isCloudConfigModalOpen, setIsCloudConfigModalOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -139,6 +145,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const savedJoined = localStorage.getItem(STORAGE_KEYS.JOINED);
       if (savedJoined) setJoinedCommunityIds(JSON.parse(savedJoined));
+
+      // 1. Immediately restore cached communities from local persistent storage
+      const savedComms = localStorage.getItem(STORAGE_KEYS.COMMUNITIES);
+      if (savedComms) {
+        try {
+          const parsed = JSON.parse(savedComms);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCommunities(parsed);
+          }
+        } catch {}
+      }
+
+      // Check cloud DB connection status
+      const cfg = getSupabaseConfig();
+      setIsCloudConnected(!!cfg && !!cfg.url && !!cfg.anonKey);
     } catch (e) {
       console.error("Local storage load error", e);
     } finally {
@@ -195,46 +216,70 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Sync communities periodically from cloud (every 3s)
-  useEffect(() => {
-    let isCancelled = false;
+  // Sync communities periodically from cloud with non-destructive merge
+  const fetchCommunities = useCallback(async () => {
+    try {
+      const comms = await cloudStore.loadCommunities();
+      if (Array.isArray(comms) && comms.length > 0) {
+        setCommunities((prev) => {
+          const map = new Map<string, Community>();
+          prev.forEach((c) => map.set(c.id, c));
+          comms.forEach((c) => map.set(c.id, c));
+          const merged = Array.from(map.values());
+          saveLocal(STORAGE_KEYS.COMMUNITIES, merged);
+          return merged;
+        });
 
-    const fetchCommunities = async () => {
-      try {
-        const comms = await cloudStore.loadCommunities();
-        if (!isCancelled) {
-          setCommunities(comms);
-          if (activeCommunityIdRef.current && currentUserRef.current) {
-            const activeComm = comms.find((c) => c.id === activeCommunityIdRef.current);
-            if (activeComm && (activeComm.kickedUserIds || []).includes(currentUserRef.current.id)) {
-              setActiveCommunityId(null);
-              setJoinedCommunityIds((prev) => {
-                const next = prev.filter((id) => id !== activeCommunityIdRef.current);
-                saveLocal(STORAGE_KEYS.JOINED, next);
-                return next;
-              });
-              alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
-            }
+        if (activeCommunityIdRef.current && currentUserRef.current) {
+          const activeComm = comms.find((c) => c.id === activeCommunityIdRef.current);
+          if (activeComm && (activeComm.kickedUserIds || []).includes(currentUserRef.current.id)) {
+            setActiveCommunityId(null);
+            setJoinedCommunityIds((prev) => {
+              const next = prev.filter((id) => id !== activeCommunityIdRef.current);
+              saveLocal(STORAGE_KEYS.JOINED, next);
+              return next;
+            });
+            alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
           }
         }
-      } catch (err) {
-        console.error("Failed to sync communities from cloud", err);
       }
-    };
-
-    fetchCommunities();
-    const interval = setInterval(fetchCommunities, 3000);
-    return () => {
-      isCancelled = true;
-      clearInterval(interval);
-    };
+    } catch (err) {
+      console.warn("Background communities sync:", err);
+    }
   }, []);
 
-  // Sync messages periodically for active community (every 2s)
+  useEffect(() => {
+    fetchCommunities();
+    const interval = setInterval(fetchCommunities, 10000);
+    const onFocus = () => fetchCommunities();
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+    }
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+      }
+    };
+  }, [fetchCommunities]);
+
+  // Sync messages periodically for active community
   useEffect(() => {
     if (!activeCommunityId) {
       setMessages([]);
       return;
+    }
+
+    // Immediately restore cached messages
+    const cacheKey = `chamchi_messages_${activeCommunityId}`;
+    const cachedMsgs = localStorage.getItem(cacheKey);
+    if (cachedMsgs) {
+      try {
+        const parsed = JSON.parse(cachedMsgs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      } catch {}
     }
 
     let isCancelled = false;
@@ -242,19 +287,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const fetchMessages = async () => {
       try {
         const msgs = await cloudStore.loadMessages(activeCommunityId);
-        if (!isCancelled) {
-          setMessages(msgs);
+        if (!isCancelled && Array.isArray(msgs) && msgs.length > 0) {
+          setMessages((prev) => {
+            const map = new Map<string, ChatMessage>();
+            prev.forEach((m) => map.set(m.id, m));
+            msgs.forEach((m) => map.set(m.id, m));
+            const merged = Array.from(map.values());
+            saveLocal(cacheKey, merged);
+            return merged;
+          });
         }
       } catch (err) {
-        console.error("Failed to sync messages from cloud", err);
+        console.warn("Background messages sync:", err);
       }
     };
 
     fetchMessages();
-    const interval = setInterval(fetchMessages, 2000);
+    const interval = setInterval(fetchMessages, 6000);
+    const onFocus = () => fetchMessages();
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+    }
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+      }
     };
   }, [activeCommunityId]);
 
@@ -466,6 +525,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 2. Persist to Cloud DB
       const updatedList = await cloudStore.saveCommunity(newComm);
       setCommunities(updatedList);
+      saveLocal(STORAGE_KEYS.COMMUNITIES, updatedList);
 
       // 3. Broadcast across tabs
       try {
@@ -590,7 +650,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteCommunity = async (communityId: string): Promise<boolean> => {
     // 1. Optimistic removal from state
-    setCommunities((prev) => prev.filter((c) => c.id !== communityId));
+    setCommunities((prev) => {
+      const next = prev.filter((c) => c.id !== communityId);
+      saveLocal(STORAGE_KEYS.COMMUNITIES, next);
+      return next;
+    });
     setJoinedCommunityIds((prev) => {
       const next = prev.filter((id) => id !== communityId);
       saveLocal(STORAGE_KEYS.JOINED, next);
@@ -611,6 +675,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return true;
   };
 
+  const updateSupabaseCloudKeys = async (url: string, key: string) => {
+    saveSupabaseConfig(url, key);
+    setIsCloudConnected(true);
+    const comms = await cloudStore.loadCommunities();
+    if (Array.isArray(comms) && comms.length > 0) {
+      setCommunities(comms);
+      saveLocal(STORAGE_KEYS.COMMUNITIES, comms);
+    }
+    return true;
+  };
+
+  const disconnectSupabaseCloud = () => {
+    clearSupabaseConfig();
+    setIsCloudConnected(false);
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -619,11 +699,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         toggleTheme,
         chatStyle,
         setChatStyle,
-        isCloudConnected: true,
+        isCloudConnected,
         isCloudConfigModalOpen,
         setIsCloudConfigModalOpen,
-        updateSupabaseCloudKeys: async () => true,
-        disconnectSupabaseCloud: () => {},
+        updateSupabaseCloudKeys,
+        disconnectSupabaseCloud,
         currentUser,
         authError,
         registerSiteAccount,
