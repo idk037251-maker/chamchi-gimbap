@@ -75,10 +75,10 @@ export default function CommunityChatRoom() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const community = communities.find((c) => c.id === activeCommunityId);
+  const community = (communities || []).find((c) => c.id === activeCommunityId);
   const activeChannel =
-    community?.channels.find((ch) => ch.id === activeChannelId) ||
-    community?.channels[0];
+    (community?.channels || []).find((ch) => ch.id === activeChannelId) ||
+    (community?.channels || [])[0];
 
   const isOwner =
     !!currentUser &&
@@ -88,13 +88,14 @@ export default function CommunityChatRoom() {
       (!!currentUser.username && community.createdBy === currentUser.username));
 
   // User join timestamp filter (hide messages prior to joining)
-  const myMemberRecord = (community?.members || []).find((m) => m.userId === currentUser?.id);
+  const myMemberRecord = (community?.members || []).find((m) => m?.userId === currentUser?.id);
   const storedJoinTime = typeof window !== "undefined" && community && currentUser
     ? localStorage.getItem(`chamchi_join_${community.id}_${currentUser.id}`)
     : null;
   const myJoinedAtIso = isOwner ? null : (myMemberRecord?.joinedAt || storedJoinTime);
 
-  const roomMessages = messages.filter((m) => {
+  const roomMessages = (messages || []).filter((m) => {
+    if (!m) return false;
     if (m.communityId !== activeCommunityId) return false;
     if (m.channelId !== (activeChannel?.id || "general")) return false;
 
@@ -106,7 +107,7 @@ export default function CommunityChatRoom() {
       let msgTimeMs = 0;
       if (m.createdAt) {
         msgTimeMs = new Date(m.createdAt).getTime();
-      } else if (m.id.startsWith("msg-")) {
+      } else if (m.id && m.id.startsWith("msg-")) {
         const rawNum = parseInt(m.id.replace("msg-", "").split("-")[0], 10);
         if (!isNaN(rawNum)) msgTimeMs = rawNum;
       }
@@ -307,7 +308,7 @@ export default function CommunityChatRoom() {
               채널 목록
             </div>
             <div className="space-y-1">
-              {community.channels.map((ch) => {
+              {(community.channels || []).map((ch) => {
                 const isSelected = activeChannel?.id === ch.id;
                 const Icon =
                   ch.type === "announcement" ? Megaphone : ch.type === "qna" ? HelpCircle : Hash;
@@ -415,7 +416,7 @@ export default function CommunityChatRoom() {
                   커뮤니티 이용 규칙
                 </span>
                 <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                  {community.rules.map((rule, idx) => (
+                  {(community.rules || []).map((rule, idx) => (
                     <li key={idx} className="flex items-start gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#23a55a] flex-shrink-0 mt-0.5" />
                       <span>{rule}</span>
@@ -512,10 +513,10 @@ export default function CommunityChatRoom() {
                     </div>
 
                     {/* Reactions */}
-                    {msg.reactions.length > 0 && (
+                    {(msg.reactions || []).length > 0 && (
                       <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                        {msg.reactions.map((r) => {
-                          const reacted = r.users.includes(currentUser.id);
+                        {(msg.reactions || []).map((r) => {
+                          const reacted = (r.users || []).includes(currentUser.id);
                           return (
                             <button
                               key={r.emoji}
@@ -527,7 +528,7 @@ export default function CommunityChatRoom() {
                               }`}
                             >
                               <span>{r.emoji}</span>
-                              <span>{r.users.length}</span>
+                              <span>{(r.users || []).length}</span>
                             </button>
                           );
                         })}
@@ -763,43 +764,6 @@ export default function CommunityChatRoom() {
         </div>
       )}
 
-      {/* Full-screen Lightbox Image Modal */}
-      {lightboxImage && (
-        <div
-          onClick={() => setLightboxImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-zoom-out animate-in fade-in duration-150"
-        >
-          <div
-            className="relative max-w-4xl max-h-[92vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={lightboxImage}
-              alt="원본 사진 미리보기"
-              className="max-w-full max-h-[82vh] rounded-3xl object-contain shadow-2xl border border-white/10"
-            />
-            <div className="mt-3 flex items-center gap-3">
-              <a
-                href={lightboxImage}
-                download="chamchi-chat-image.png"
-                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>사진 다운로드</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setLightboxImage(null)}
-                className="px-4 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>닫기</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Delete Confirmation Modal (Owner Only) */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
@@ -850,43 +814,6 @@ export default function CommunityChatRoom() {
                     <span>영구 삭제 승인</span>
                   </>
                 )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Full-screen Lightbox Image Modal */}
-      {lightboxImage && (
-        <div
-          onClick={() => setLightboxImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-zoom-out animate-in fade-in duration-150"
-        >
-          <div
-            className="relative max-w-4xl max-h-[92vh] flex flex-col items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={lightboxImage}
-              alt="원본 사진 미리보기"
-              className="max-w-full max-h-[82vh] rounded-3xl object-contain shadow-2xl border border-white/10"
-            />
-            <div className="mt-3 flex items-center gap-3">
-              <a
-                href={lightboxImage}
-                download="chamchi-chat-image.png"
-                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>사진 다운로드</span>
-              </a>
-              <button
-                type="button"
-                onClick={() => setLightboxImage(null)}
-                className="px-4 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>닫기</span>
               </button>
             </div>
           </div>

@@ -39,8 +39,8 @@ export default function HamburgerDrawer() {
 
   if (!currentUser) return null;
 
-  const joinedCommunities = communities.filter((c) =>
-    joinedCommunityIds.includes(c.id)
+  const joinedCommunities = (communities || []).filter((c) =>
+    (joinedCommunityIds || []).includes(c?.id)
   );
 
   const statusColor =
@@ -207,7 +207,7 @@ export default function HamburgerDrawer() {
               전체 커뮤니티 로비 (탐색)
             </span>
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-black/10 dark:bg-white/10">
-              {communities.length}개
+              {(communities || []).length}개
             </span>
           </button>
         </div>
@@ -216,7 +216,7 @@ export default function HamburgerDrawer() {
         <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
           <div>
             <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400 mb-2 px-1">
-              <span>참여 중인 커뮤니티 ({joinedCommunities.length})</span>
+              <span>참여 중인 커뮤니티 ({(joinedCommunities || []).length})</span>
               <Sparkles className="w-3 h-3 text-[#FEE500]" />
             </div>
             <div className="space-y-1.5">

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev -p 3005",
     "build": "next build",
+    "postbuild": "node postbuild.js",
     "start": "next start -p 3005",
     "lint": "next lint"
   },

@@ -33,8 +33,8 @@ export default function TopNavigationBar() {
 
   if (!currentUser) return null;
 
-  const joinedCommunities = communities.filter((c) =>
-    joinedCommunityIds.includes(c.id)
+  const joinedCommunities = (communities || []).filter((c) =>
+    (joinedCommunityIds || []).includes(c?.id)
   );
 
   return (
