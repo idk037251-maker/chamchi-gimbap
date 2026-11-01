@@ -54,18 +54,67 @@ CREATE TABLE IF NOT EXISTS public.messages (
   unread_count INT DEFAULT 0,
   reactions JSONB DEFAULT '[]'::jsonb,
   attachment_url TEXT DEFAULT '',            -- 첨부 이미지 URL
+  read_user_ids JSONB DEFAULT '[]'::jsonb,   -- 읽은 유저 목록 (카카오톡 스타일 읽음 카운트용)
   is_system BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Supabase Realtime WebSocket 복제 활성화
+-- 기존 messages 테이블에 read_user_ids 컬럼이 없을 경우 안전하게 추가 (무중단 마이그레이션)
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS read_user_ids JSONB DEFAULT '[]'::jsonb;
+
+-- 4. 유저 피드 게시물(포스트) 테이블 (사진/동영상 업로드, 좋아요, 댓글 지원)
+CREATE TABLE IF NOT EXISTS public.posts (
+  id TEXT PRIMARY KEY,
+  author_id TEXT NOT NULL,
+  author_name TEXT NOT NULL,
+  author_avatar TEXT DEFAULT '',
+  author_pronouns TEXT DEFAULT '',
+  content TEXT NOT NULL,
+  media_url TEXT DEFAULT '',
+  media_type TEXT DEFAULT 'image',           -- 'image' 또는 'video'
+  likes JSONB DEFAULT '[]'::jsonb,           -- 좋아요 누른 유저 ID 목록
+  comments JSONB DEFAULT '[]'::jsonb,        -- 댓글 목록 [{id, authorId, authorName, authorAvatar, content, createdAt}]
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. 팔로우/팔로워 관계 테이블
+CREATE TABLE IF NOT EXISTS public.follows (
+  follower_id TEXT NOT NULL,
+  following_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (follower_id, following_id)
+);
+
+-- 6. 1:1 개인 메시지(DM) 테이블
+CREATE TABLE IF NOT EXISTS public.dm_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  sender_id TEXT NOT NULL,
+  sender_name TEXT NOT NULL,
+  sender_avatar TEXT DEFAULT '',
+  sender_pronouns TEXT DEFAULT '',
+  recipient_id TEXT NOT NULL,
+  recipient_name TEXT NOT NULL,
+  recipient_avatar TEXT DEFAULT '',
+  content TEXT NOT NULL,
+  attachment_url TEXT DEFAULT '',
+  read_user_ids JSONB DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. Supabase Realtime WebSocket 복제 활성화
 ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.communities;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.posts;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.dm_messages;
 
--- 5. Row Level Security (RLS) 정책
+-- 8. Row Level Security (RLS) 정책
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.communities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dm_messages ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public Profiles Select" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Public Profiles Insert" ON public.profiles FOR INSERT WITH CHECK (true);
@@ -73,15 +122,35 @@ CREATE POLICY "Public Profiles Update" ON public.profiles FOR UPDATE USING (true
 
 CREATE POLICY "Public Communities Select" ON public.communities FOR SELECT USING (true);
 CREATE POLICY "Public Communities Insert" ON public.communities FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Communities Update" ON public.communities FOR UPDATE USING (true);
+CREATE POLICY "Public Communities Delete" ON public.communities FOR DELETE USING (true);
 
 CREATE POLICY "Public Messages Select" ON public.messages FOR SELECT USING (true);
 CREATE POLICY "Public Messages Insert" ON public.messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Messages Update" ON public.messages FOR UPDATE USING (true);
+CREATE POLICY "Public Messages Delete" ON public.messages FOR DELETE USING (true);
 
--- 6. 스토리지 버킷 (아바타/배너 파일 영구 저장)
+CREATE POLICY "Public Posts Select" ON public.posts FOR SELECT USING (true);
+CREATE POLICY "Public Posts Insert" ON public.posts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Posts Update" ON public.posts FOR UPDATE USING (true);
+CREATE POLICY "Public Posts Delete" ON public.posts FOR DELETE USING (true);
+
+CREATE POLICY "Public Follows Select" ON public.follows FOR SELECT USING (true);
+CREATE POLICY "Public Follows Insert" ON public.follows FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Follows Delete" ON public.follows FOR DELETE USING (true);
+
+CREATE POLICY "Public Dm Select" ON public.dm_messages FOR SELECT USING (true);
+CREATE POLICY "Public Dm Insert" ON public.dm_messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Dm Update" ON public.dm_messages FOR UPDATE USING (true);
+
+-- 9. 스토리지 버킷 (아바타/배너/게시물 미디어 파일 영구 저장)
 INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true) ON CONFLICT (id) DO UPDATE SET public = true;
 INSERT INTO storage.buckets (id, name, public) VALUES ('banners', 'banners', true) ON CONFLICT (id) DO UPDATE SET public = true;
+INSERT INTO storage.buckets (id, name, public) VALUES ('media', 'media', true) ON CONFLICT (id) DO UPDATE SET public = true;
 
 CREATE POLICY "Public Read Avatars" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
 CREATE POLICY "Public Upload Avatars" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars');
 CREATE POLICY "Public Read Banners" ON storage.objects FOR SELECT USING (bucket_id = 'banners');
 CREATE POLICY "Public Upload Banners" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'banners');
+CREATE POLICY "Public Read Media" ON storage.objects FOR SELECT USING (bucket_id = 'media');
+CREATE POLICY "Public Upload Media" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'media');

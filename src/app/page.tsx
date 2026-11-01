@@ -7,12 +7,15 @@ import TopNavigationBar from "@/components/TopNavigationBar";
 import HamburgerDrawer from "@/components/HamburgerDrawer";
 import CommunityLobby from "@/components/CommunityLobby";
 import CommunityChatRoom from "@/components/CommunityChatRoom";
+import DmChatRoom from "@/components/DmChatRoom";
+import DmListDrawer from "@/components/DmListDrawer";
+import UserProfileDetailModal from "@/components/UserProfileDetailModal";
 import CreateCommunityModal from "@/components/CreateCommunityModal";
 import ProfileSettingsModal from "@/components/ProfileSettingsModal";
 import SupabaseCloudModal from "@/components/SupabaseCloudModal";
 
 export default function HomePage() {
-  const { isHydrated, currentUser, activeCommunityId } = useApp();
+  const { isHydrated, currentUser, activeCommunityId, activeDmUser } = useApp();
 
   // Avoid flashing the login screen before the saved session is restored
   if (!isHydrated) {
@@ -38,12 +41,20 @@ export default function HomePage() {
       <HamburgerDrawer />
 
       <main className="flex-1 flex overflow-hidden">
-        {activeCommunityId === null ? <CommunityLobby /> : <CommunityChatRoom />}
+        {activeDmUser !== null ? (
+          <DmChatRoom />
+        ) : activeCommunityId === null ? (
+          <CommunityLobby />
+        ) : (
+          <CommunityChatRoom />
+        )}
       </main>
 
       <CreateCommunityModal />
       <ProfileSettingsModal />
       <SupabaseCloudModal />
+      <UserProfileDetailModal />
+      <DmListDrawer />
     </div>
   );
 }

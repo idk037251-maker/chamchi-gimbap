@@ -1,7 +1,24 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
-import { UserProfile, Community, ChatMessage, ChatStyleMode } from "@/types/chat";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import {
+  UserProfile,
+  Community,
+  ChatMessage,
+  ChatStyleMode,
+  Post,
+  PostComment,
+  DmMessage,
+  DmConversation,
+  isSuperAdmin,
+} from "@/types/chat";
 import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import { cloudStore } from "@/lib/cloudStore";
 import { filterProfanity } from "@/lib/profanityFilter";
@@ -82,6 +99,41 @@ interface AppContextType {
   messages: ChatMessage[];
   sendMessage: (content: string, attachmentUrl?: string) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => void;
+
+  // KakaoTalk Unread & Message Deletion & Admin Claim
+  markCommunityMessagesRead: (communityId: string, messageIds: string[]) => Promise<void>;
+  deleteChatMessage: (communityId: string, messageId: string) => Promise<void>;
+  claimCommunityOwnership: (communityId: string) => Promise<boolean>;
+
+  // User Inspection & Follow
+  inspectedUser: UserProfile | null;
+  setInspectedUser: (user: UserProfile | null) => void;
+  inspectUser: (userIdOrProfile: string | Partial<UserProfile>) => Promise<void>;
+  followingIds: string[];
+  followCounts: Record<string, { followers: number; following: number }>;
+  toggleFollowUser: (targetUserId: string) => Promise<boolean>;
+
+  // Posts & Feed
+  userPosts: Post[];
+  loadUserPosts: (authorId?: string) => Promise<Post[]>;
+  createPost: (content: string, mediaUrl?: string, mediaType?: "image" | "video") => Promise<Post | null>;
+  deletePost: (postId: string) => Promise<boolean>;
+  toggleLikePost: (postId: string) => Promise<void>;
+  addPostComment: (postId: string, content: string) => Promise<void>;
+  uploadMediaFile: (file: File) => Promise<{ url: string; type: "image" | "video" }>;
+
+  // 1:1 Direct Messages (DM)
+  activeDmUser: UserProfile | null;
+  setActiveDmUser: (user: UserProfile | null) => void;
+  openDmWithUser: (user: UserProfile) => void;
+  closeDm: () => void;
+  dmMessages: DmMessage[];
+  sendDmMessage: (content: string, attachmentUrl?: string) => Promise<void>;
+  markDmMessagesRead: (otherUserId: string) => Promise<void>;
+  isDmDrawerOpen: boolean;
+  setIsDmDrawerOpen: (open: boolean) => void;
+  dmConversations: DmConversation[];
+  totalDmUnreadCount: number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -121,6 +173,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [joinedCommunityIds, setJoinedCommunityIds] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
+  // Navigation & Modal states
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [isCloudConfigModalOpen, setIsCloudConfigModalOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -129,11 +182,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeCommunityId, setActiveCommunityId] = useState<string | null>(null);
   const [activeChannelId, setActiveChannelId] = useState<string>("general");
 
+  // User Profile Inspection & Follow states
+  const [inspectedUser, setInspectedUser] = useState<UserProfile | null>(null);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [followCounts, setFollowCounts] = useState<Record<string, { followers: number; following: number }>>({});
+
+  // Posts Feed states
+  const [userPosts, setUserPosts] = useState<Post[]>([]);
+
+  // 1:1 DM states
+  const [activeDmUser, setActiveDmUser] = useState<UserProfile | null>(null);
+  const [dmMessages, setDmMessages] = useState<DmMessage[]>([]);
+  const [isDmDrawerOpen, setIsDmDrawerOpen] = useState(false);
+  const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
+
   const broadcastRef = useRef<BroadcastChannel | null>(null);
   const activeCommunityIdRef = useRef<string | null>(null);
   activeCommunityIdRef.current = activeCommunityId;
   const currentUserRef = useRef<UserProfile | null>(null);
   currentUserRef.current = currentUser;
+  const activeDmUserRef = useRef<UserProfile | null>(null);
+  activeDmUserRef.current = activeDmUser;
 
   // Initialize from LocalStorage and Cloud
   useEffect(() => {
@@ -142,12 +211,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedTheme === "light" || savedTheme === "dark") setTheme(savedTheme);
 
       const savedUser = localStorage.getItem(STORAGE_KEYS.USER);
-      if (savedUser) setCurrentUser(JSON.parse(savedUser));
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        setCurrentUser(u);
+        const savedFollowing = localStorage.getItem(`chamchi_following_${u.id}`);
+        if (savedFollowing) setFollowingIds(JSON.parse(savedFollowing));
+      }
 
       const savedJoined = localStorage.getItem(STORAGE_KEYS.JOINED);
       if (savedJoined) setJoinedCommunityIds(JSON.parse(savedJoined));
 
-      // 1. Immediately restore cached communities from local persistent storage
+      // Restore cached communities
       const savedComms = localStorage.getItem(STORAGE_KEYS.COMMUNITIES);
       if (savedComms) {
         try {
@@ -180,10 +254,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (activeCommunityIdRef.current === payload) {
             setActiveCommunityId(null);
           }
+        } else if (type === "COMMUNITY_CLAIMED") {
+          setCommunities((prev) =>
+            deduplicateCommunities(prev.map((c) => (c.id === payload.id ? payload : c)))
+          );
         } else if (type === "NEW_MESSAGE") {
           if (activeCommunityIdRef.current === payload.communityId) {
             setMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]));
           }
+        } else if (type === "MESSAGE_DELETED") {
+          const { communityId, messageId } = payload || {};
+          if (activeCommunityIdRef.current === communityId) {
+            setMessages((prev) => prev.filter((m) => m.id !== messageId));
+          }
+        } else if (type === "NEW_DM") {
+          if (
+            currentUserRef.current &&
+            (payload.recipientId === currentUserRef.current.id ||
+              payload.senderId === currentUserRef.current.id)
+          ) {
+            setDmMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]));
+          }
+        } else if (type === "NEW_POST") {
+          setUserPosts((prev) => (prev.some((p) => p.id === payload.id) ? prev : [payload, ...prev]));
+        } else if (type === "POST_DELETED") {
+          setUserPosts((prev) => prev.filter((p) => p.id !== payload));
         } else if (type === "MEMBER_KICKED") {
           const { communityId, userId } = payload || {};
           setCommunities((prev) =>
@@ -266,7 +361,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Immediately restore cached messages
     const cacheKey = `chamchi_messages_${activeCommunityId}`;
     const cachedMsgs = localStorage.getItem(cacheKey);
     if (cachedMsgs) {
@@ -299,7 +393,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     fetchMessages();
-    const interval = setInterval(fetchMessages, 6000);
+    const interval = setInterval(fetchMessages, 5000);
     const onFocus = () => fetchMessages();
     if (typeof window !== "undefined") {
       window.addEventListener("focus", onFocus);
@@ -312,6 +406,67 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, [activeCommunityId]);
+
+  // Sync DM messages for active DM conversation
+  useEffect(() => {
+    if (!currentUser || !activeDmUser) {
+      setDmMessages([]);
+      return;
+    }
+
+    const convId = cloudStore.getDmConversationId(currentUser.id, activeDmUser.id);
+    let isCancelled = false;
+
+    const fetchDms = async () => {
+      try {
+        const dms = await cloudStore.loadDmMessages(convId);
+        if (!isCancelled && Array.isArray(dms)) {
+          setDmMessages(dms);
+          // Auto mark as read
+          const unreadForMe = dms.filter(
+            (m) => m.recipientId === currentUser.id && !m.readUserIds.includes(currentUser.id)
+          );
+          if (unreadForMe.length > 0) {
+            await cloudStore.markDmMessagesAsRead(currentUser.id, activeDmUser.id);
+          }
+        }
+      } catch (err) {
+        console.warn("Background DM sync:", err);
+      }
+    };
+
+    fetchDms();
+    const interval = setInterval(fetchDms, 4000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentUser?.id, activeDmUser?.id]);
+
+  // Load follows and DM list periodically
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const loadFollowData = async () => {
+      try {
+        const fList = await cloudStore.loadFollows();
+        const following = fList
+          .filter((f) => f.followerId === currentUser.id)
+          .map((f) => f.followingId);
+        setFollowingIds(following);
+        saveLocal(`chamchi_following_${currentUser.id}`, following);
+
+        const myCounts = await cloudStore.getFollowCounts(currentUser.id);
+        setFollowCounts((prev) => ({ ...prev, [currentUser.id]: myCounts }));
+      } catch (e) {
+        console.warn("Follows load error", e);
+      }
+    };
+
+    loadFollowData();
+    const interval = setInterval(loadFollowData, 15000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
 
   // Apply dark class to <html>
   useEffect(() => {
@@ -379,6 +534,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem(STORAGE_KEYS.USER);
     } catch {}
     setActiveCommunityId(null);
+    setActiveDmUser(null);
   };
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
@@ -394,7 +550,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await cloudStore.updateUser(updated);
   };
 
-  // Convert uploaded image to lightweight compressed Base64 for permanent cloud storage
   const uploadAvatarOrBannerFile = async (
     bucket: "avatars" | "banners",
     file: File
@@ -416,20 +571,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const joinCommunity = async (communityId: string): Promise<boolean> => {
     if (!currentUser) return false;
 
-    // Check if user is kicked from this community
     const targetComm = communities.find((c) => c.id === communityId);
     if (targetComm && (targetComm.kickedUserIds || []).includes(currentUser.id)) {
       alert("해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다.");
       return false;
     }
 
-    // Record local join timestamp if not present
     const joinKey = `chamchi_join_${communityId}_${currentUser.id}`;
     if (typeof window !== "undefined" && !localStorage.getItem(joinKey)) {
       localStorage.setItem(joinKey, new Date().toISOString());
     }
 
-    // Call cloudStore to add to members and persist
     const res = await cloudStore.joinCommunity(communityId, {
       userId: currentUser.id,
       username: currentUser.username,
@@ -454,7 +606,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
-    // Immediately navigate to the community's chat room!
+    setActiveDmUser(null);
     setActiveCommunityId(communityId);
     setActiveChannelId("general");
     return true;
@@ -470,6 +622,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const normName = data.name.trim().toLowerCase();
     const existing = communities.find((c) => c.name.trim().toLowerCase() === normName);
     if (existing) {
+      setActiveDmUser(null);
       setActiveCommunityId(existing.id);
       setActiveChannelId("general");
       return existing;
@@ -510,7 +663,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         kickedUserIds: [],
       };
 
-      // 1. Optimistically add to state and immediately switch to chat view
       setCommunities((prev) => deduplicateCommunities([newComm, ...prev]));
 
       setJoinedCommunityIds((prev) => {
@@ -519,16 +671,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
 
+      setActiveDmUser(null);
       setActiveCommunityId(commId);
       setActiveChannelId("general");
 
-      // 2. Persist to Cloud DB
       const updatedList = await cloudStore.saveCommunity(newComm);
       const deduped = deduplicateCommunities(updatedList);
       setCommunities(deduped);
       saveLocal(STORAGE_KEYS.COMMUNITIES, deduped);
 
-      // 3. Broadcast across tabs
       try {
         broadcastRef.current?.postMessage({ type: "NEW_COMMUNITY", payload: newComm });
       } catch {}
@@ -555,7 +706,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCommunities((prev) => prev.map((c) => (c.id === communityId ? updated : c)));
     }
 
-    // Broadcast kick across all tabs
     try {
       broadcastRef.current?.postMessage({
         type: "MEMBER_KICKED",
@@ -563,7 +713,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     } catch {}
 
-    // If local user is targetUserId, kick out
     if (currentUser?.id === targetUserId && activeCommunityId === communityId) {
       setActiveCommunityId(null);
       setJoinedCommunityIds((prev) => {
@@ -596,23 +745,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       senderName: currentUser.name,
       senderPronouns: currentUser.pronouns || "",
       senderAvatar: currentUser.avatarUrl || AVATAR_PRESETS[0],
-      senderRole: isOwner ? "방장" : "멤버",
+      senderRole: isSuperAdmin(currentUser) ? "관리자" : isOwner ? "방장" : "멤버",
       content: filterProfanity(content.trim()),
       timestamp: formatKoreanTime(),
       createdAt: new Date().toISOString(),
+      readUserIds: [currentUser.id],
       unreadCount: 0,
       reactions: [],
       isSystem: false,
       attachmentUrl,
     };
 
-    // Optimistically update UI
     setMessages((prev) => [...prev, newMsg]);
-
-    // Save to Cloud DB
     await cloudStore.saveMessage(activeCommunityId, newMsg);
 
-    // Broadcast across tabs
     try {
       broadcastRef.current?.postMessage({ type: "NEW_MESSAGE", payload: newMsg });
     } catch {}
@@ -621,7 +767,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toggleReaction = async (messageId: string, emoji: string) => {
     if (!currentUser || !activeCommunityId) return;
 
-    // Optimistically update
     setMessages((prev) =>
       prev.map((msg) => {
         if (msg.id !== messageId) return msg;
@@ -645,12 +790,259 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    // Save to Cloud DB
     await cloudStore.toggleReaction(activeCommunityId, messageId, emoji, currentUser.id);
   };
 
+  // KakaoTalk Unread & Message Deletion & Admin Claim
+  const markCommunityMessagesRead = useCallback(async (communityId: string, messageIds: string[]) => {
+    if (!currentUserRef.current || !messageIds || messageIds.length === 0) return;
+    const uid = currentUserRef.current.id;
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (!messageIds.includes(m.id)) return m;
+        const readUsers = m.readUserIds || [m.senderId];
+        if (!readUsers.includes(uid)) {
+          return { ...m, readUserIds: [...readUsers, uid] };
+        }
+        return m;
+      })
+    );
+    await cloudStore.markMessagesAsRead(communityId, messageIds, uid);
+  }, []);
+
+  const deleteChatMessage = async (communityId: string, messageId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    await cloudStore.deleteMessage(communityId, messageId);
+    try {
+      broadcastRef.current?.postMessage({
+        type: "MESSAGE_DELETED",
+        payload: { communityId, messageId },
+      });
+    } catch {}
+  };
+
+  const claimCommunityOwnership = async (communityId: string): Promise<boolean> => {
+    if (!currentUser || !isSuperAdmin(currentUser)) return false;
+    const updated = await cloudStore.claimCommunityOwnership(communityId, currentUser.id, currentUser.name);
+    if (!updated) return false;
+    setCommunities((prev) => deduplicateCommunities(prev.map((c) => (c.id === communityId ? updated : c))));
+    try {
+      broadcastRef.current?.postMessage({ type: "COMMUNITY_CLAIMED", payload: updated });
+    } catch {}
+    return true;
+  };
+
+  // User Profile Inspection & Follow
+  const inspectUser = async (userIdOrProfile: string | Partial<UserProfile>) => {
+    if (typeof userIdOrProfile === "object" && userIdOrProfile !== null && "id" in userIdOrProfile) {
+      const p = userIdOrProfile as UserProfile;
+      setInspectedUser(p);
+      return;
+    }
+    const uid = String(userIdOrProfile);
+    for (const comm of communities) {
+      const found = (comm.members || []).find((m) => m.userId === uid);
+      if (found) {
+        setInspectedUser({
+          id: found.userId,
+          username: found.username || found.name,
+          name: found.name,
+          pronouns: found.pronouns,
+          avatarUrl: found.avatarUrl,
+          bannerUrl: "",
+          bannerColor: "from-indigo-600 to-purple-600",
+          bio: "",
+          statusMessage: "",
+          status: "online",
+          createdAt: found.joinedAt,
+          authProvider: "site",
+        });
+        return;
+      }
+    }
+    // Fallback
+    setInspectedUser({
+      id: uid,
+      username: uid,
+      name: uid,
+      pronouns: "",
+      avatarUrl: AVATAR_PRESETS[0],
+      bannerUrl: "",
+      bannerColor: "from-indigo-600 to-purple-600",
+      bio: "",
+      statusMessage: "",
+      status: "online",
+      createdAt: new Date().toISOString(),
+      authProvider: "site",
+    });
+  };
+
+  const toggleFollowUser = async (targetUserId: string): Promise<boolean> => {
+    if (!currentUser || currentUser.id === targetUserId) return false;
+    const res = await cloudStore.toggleFollow(currentUser.id, targetUserId);
+    const isNowFollowing = res.isFollowing;
+    setFollowingIds((prev) => {
+      const next = isNowFollowing
+        ? Array.from(new Set([...prev, targetUserId]))
+        : prev.filter((id) => id !== targetUserId);
+      saveLocal(`chamchi_following_${currentUser.id}`, next);
+      return next;
+    });
+
+    setFollowCounts((prev) => ({
+      ...prev,
+      [targetUserId]: { followers: res.followersCount, following: res.followingCount },
+    }));
+    return isNowFollowing;
+  };
+
+  // Posts Feed
+  const loadUserPosts = async (authorId?: string): Promise<Post[]> => {
+    const list = await cloudStore.loadPosts(authorId);
+    setUserPosts(list);
+    return list;
+  };
+
+  const createPost = async (
+    content: string,
+    mediaUrl?: string,
+    mediaType?: "image" | "video"
+  ): Promise<Post | null> => {
+    if (!currentUser) return null;
+    const newPost: Post = {
+      id: newId("post"),
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      authorAvatar: currentUser.avatarUrl || AVATAR_PRESETS[0],
+      authorPronouns: currentUser.pronouns || "",
+      content: filterProfanity(content.trim()),
+      mediaUrl,
+      mediaType: mediaType || (mediaUrl ? "image" : undefined),
+      likes: [],
+      comments: [],
+      createdAt: new Date().toISOString(),
+    };
+    setUserPosts((prev) => [newPost, ...prev]);
+    const updated = await cloudStore.savePost(newPost);
+    setUserPosts(updated);
+    try {
+      broadcastRef.current?.postMessage({ type: "NEW_POST", payload: newPost });
+    } catch {}
+    return newPost;
+  };
+
+  const deletePost = async (postId: string): Promise<boolean> => {
+    setUserPosts((prev) => prev.filter((p) => p.id !== postId));
+    await cloudStore.deletePost(postId);
+    try {
+      broadcastRef.current?.postMessage({ type: "POST_DELETED", payload: postId });
+    } catch {}
+    return true;
+  };
+
+  const toggleLikePost = async (postId: string) => {
+    if (!currentUser) return;
+    setUserPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        const hasLiked = (p.likes || []).includes(currentUser.id);
+        const nextLikes = hasLiked
+          ? p.likes.filter((id) => id !== currentUser.id)
+          : [...(p.likes || []), currentUser.id];
+        return { ...p, likes: nextLikes };
+      })
+    );
+    await cloudStore.toggleLikePost(postId, currentUser.id);
+  };
+
+  const addPostComment = async (postId: string, content: string) => {
+    if (!currentUser || !content.trim()) return;
+    const comment: PostComment = {
+      id: newId("cmt"),
+      postId,
+      authorId: currentUser.id,
+      authorName: currentUser.name,
+      authorAvatar: currentUser.avatarUrl || AVATAR_PRESETS[0],
+      authorPronouns: currentUser.pronouns || "",
+      content: filterProfanity(content.trim()),
+      createdAt: new Date().toISOString(),
+    };
+    setUserPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, comments: [...(p.comments || []), comment] } : p))
+    );
+    await cloudStore.addComment(postId, comment);
+  };
+
+  const uploadMediaFile = async (file: File): Promise<{ url: string; type: "image" | "video" }> => {
+    if (file.type.startsWith("video/")) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ url: reader.result as string, type: "video" });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    } else {
+      const compressed = await compressImage(file, 1024, 1024, 0.85);
+      return { url: compressed, type: "image" };
+    }
+  };
+
+  // 1:1 Direct Messages (DM)
+  const openDmWithUser = (user: UserProfile) => {
+    setActiveDmUser(user);
+    setActiveCommunityId(null);
+    setIsDrawerOpen(false);
+    setIsDmDrawerOpen(false);
+  };
+
+  const closeDm = () => {
+    setActiveDmUser(null);
+  };
+
+  const sendDmMessage = async (content: string, attachmentUrl?: string) => {
+    if (!currentUser || !activeDmUser) return;
+    if (!content.trim() && !attachmentUrl) return;
+
+    const convId = cloudStore.getDmConversationId(currentUser.id, activeDmUser.id);
+    const newDm: DmMessage = {
+      id: newId("dm"),
+      conversationId: convId,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatarUrl || AVATAR_PRESETS[0],
+      senderPronouns: currentUser.pronouns || "",
+      recipientId: activeDmUser.id,
+      recipientName: activeDmUser.name,
+      recipientAvatar: activeDmUser.avatarUrl || AVATAR_PRESETS[0],
+      content: filterProfanity(content.trim()),
+      attachmentUrl,
+      readUserIds: [currentUser.id],
+      timestamp: formatKoreanTime(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setDmMessages((prev) => [...prev, newDm]);
+    await cloudStore.saveDmMessage(newDm);
+
+    try {
+      broadcastRef.current?.postMessage({ type: "NEW_DM", payload: newDm });
+    } catch {}
+  };
+
+  const markDmMessagesRead = async (otherUserId: string) => {
+    if (!currentUser) return;
+    setDmMessages((prev) =>
+      prev.map((m) => {
+        if (m.recipientId === currentUser.id && !m.readUserIds.includes(currentUser.id)) {
+          return { ...m, readUserIds: [...m.readUserIds, currentUser.id] };
+        }
+        return m;
+      })
+    );
+    await cloudStore.markDmMessagesAsRead(currentUser.id, otherUserId);
+  };
+
   const deleteCommunity = async (communityId: string): Promise<boolean> => {
-    // 1. Optimistic removal from state
     setCommunities((prev) => {
       const next = prev.filter((c) => c.id !== communityId);
       saveLocal(STORAGE_KEYS.COMMUNITIES, next);
@@ -666,12 +1058,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setActiveCommunityId(null);
     }
 
-    // 2. Broadcast across tabs
     try {
       broadcastRef.current?.postMessage({ type: "COMMUNITY_DELETED", payload: communityId });
     } catch {}
 
-    // 3. Cascade delete in Cloud DB
     await cloudStore.deleteCommunity(communityId);
     return true;
   };
@@ -691,6 +1081,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clearSupabaseConfig();
     setIsCloudConnected(false);
   };
+
+  const totalDmUnreadCount = dmConversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
   return (
     <AppContext.Provider
@@ -733,6 +1125,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         messages,
         sendMessage,
         toggleReaction,
+        markCommunityMessagesRead,
+        deleteChatMessage,
+        claimCommunityOwnership,
+        inspectedUser,
+        setInspectedUser,
+        inspectUser,
+        followingIds,
+        followCounts,
+        toggleFollowUser,
+        userPosts,
+        loadUserPosts,
+        createPost,
+        deletePost,
+        toggleLikePost,
+        addPostComment,
+        uploadMediaFile,
+        activeDmUser,
+        setActiveDmUser,
+        openDmWithUser,
+        closeDm,
+        dmMessages,
+        sendDmMessage,
+        markDmMessagesRead,
+        isDmDrawerOpen,
+        setIsDmDrawerOpen,
+        dmConversations,
+        totalDmUnreadCount,
       }}
     >
       {children}

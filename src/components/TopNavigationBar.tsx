@@ -3,6 +3,7 @@
 import React from "react";
 import { useApp } from "@/context/AppContext";
 import { deduplicateCommunities } from "@/lib/communityUtils";
+import { isSuperAdmin } from "@/types/chat";
 import {
   Menu,
   PlusCircle,
@@ -12,7 +13,6 @@ import {
   Settings,
   MessageSquareHeart,
   Database,
-  Cloud,
 } from "lucide-react";
 
 export default function TopNavigationBar() {
@@ -25,6 +25,9 @@ export default function TopNavigationBar() {
     isCloudConnected,
     activeCommunityId,
     setActiveCommunityId,
+    activeDmUser,
+    closeDm,
+    setIsDmDrawerOpen,
     communities,
     joinedCommunityIds,
     joinCommunity,
@@ -38,6 +41,8 @@ export default function TopNavigationBar() {
   const joinedCommunities = dedupedCommunities.filter((c) =>
     (joinedCommunityIds || []).includes(c?.id)
   );
+
+  const iAmAdmin = isSuperAdmin(currentUser);
 
   return (
     <nav className="h-14 px-3 sm:px-5 bg-white dark:bg-[#1e1f22] border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-3 flex-shrink-0 z-20">
@@ -57,7 +62,10 @@ export default function TopNavigationBar() {
 
         {/* Brand Logo (Clicks back to Community Lobby) */}
         <button
-          onClick={() => setActiveCommunityId(null)}
+          onClick={() => {
+            closeDm();
+            setActiveCommunityId(null);
+          }}
           className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b2d31] transition"
         >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#5865F2] to-indigo-500 flex items-center justify-center text-white shadow-xs text-base">
@@ -71,6 +79,11 @@ export default function TopNavigationBar() {
               <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
                 LIVE
               </span>
+              {iAmAdmin && (
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 shadow-2xs">
+                  👑 최고 관리자
+                </span>
+              )}
             </div>
           </div>
         </button>
@@ -80,9 +93,12 @@ export default function TopNavigationBar() {
         {/* Quick Discord-style Server Pill Icons */}
         <div className="hidden md:flex items-center gap-1.5 overflow-x-auto py-1">
           <button
-            onClick={() => setActiveCommunityId(null)}
+            onClick={() => {
+              closeDm();
+              setActiveCommunityId(null);
+            }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
-              activeCommunityId === null
+              activeCommunityId === null && activeDmUser === null
                 ? "bg-[#5865F2] text-white shadow-xs"
                 : "bg-slate-100 dark:bg-[#2b2d31] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#35373c]"
             }`}
@@ -92,11 +108,14 @@ export default function TopNavigationBar() {
           </button>
 
           {joinedCommunities.map((comm) => {
-            const isActive = activeCommunityId === comm.id;
+            const isActive = activeCommunityId === comm.id && activeDmUser === null;
             return (
               <button
                 key={comm.id}
-                onClick={() => joinCommunity(comm.id)}
+                onClick={() => {
+                  closeDm();
+                  joinCommunity(comm.id);
+                }}
                 className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition max-w-[160px] ${
                   isActive
                     ? "bg-[#FEE500] text-[#3C1E1E] shadow-xs"
@@ -112,8 +131,23 @@ export default function TopNavigationBar() {
         </div>
       </div>
 
-      {/* Right: Cloud DB Status + Create Community + Theme Toggle + Current User Mini Pill */}
+      {/* Right: DM Button + Cloud DB Status + Create Community + Theme Toggle + Current User Mini Pill */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        {/* 1:1 DM Drawer Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsDmDrawerOpen(true)}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+            activeDmUser !== null
+              ? "bg-[#FEE500] text-[#3C1E1E] shadow-xs"
+              : "bg-slate-100 dark:bg-[#2b2d31] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#35373c]"
+          }`}
+          title="1:1 개인 DM 대화 목록 열기"
+        >
+          <MessageSquareHeart className="w-3.5 h-3.5 text-pink-500" />
+          <span className="hidden sm:inline">1:1 DM</span>
+        </button>
+
         {/* Supabase Cloud Status Pill Button */}
         <button
           onClick={() => setIsCloudConfigModalOpen(true)}
@@ -171,8 +205,9 @@ export default function TopNavigationBar() {
             <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#23a55a] border-2 border-white dark:border-[#2b2d31]" />
           </div>
           <div className="text-left hidden sm:block max-w-[130px]">
-            <p className="text-xs font-bold leading-none truncate text-slate-900 dark:text-white">
-              {currentUser.name}
+            <p className="text-xs font-bold leading-none truncate text-slate-900 dark:text-white flex items-center gap-1">
+              <span>{currentUser.name}</span>
+              {iAmAdmin && <span className="text-[10px]">👑</span>}
             </p>
             <p className="text-[10px] text-[#5865F2] dark:text-indigo-300 truncate mt-0.5">
               {currentUser.pronouns}

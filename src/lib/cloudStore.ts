@@ -1,4 +1,13 @@
-import { Community, ChatMessage, UserProfile } from "@/types/chat";
+import {
+  Community,
+  ChatMessage,
+  UserProfile,
+  Post,
+  PostComment,
+  FollowRecord,
+  DmMessage,
+  DmConversation,
+} from "@/types/chat";
 import { getSupabaseConfig, SupabaseConfig } from "./supabaseClient";
 import { deduplicateCommunities } from "./communityUtils";
 
@@ -13,6 +22,9 @@ const CACHE_KEYS = {
   MESSAGES_PREFIX: "chamchi_messages_v1_",
   USER_VAULT_PREFIX: "chamchi_user_vault_",
   USERS_DIRECTORY: "chamchi_users_directory",
+  POSTS: "chamchi_posts_v1",
+  FOLLOWS: "chamchi_follows_v1",
+  DM_PREFIX: "chamchi_dm_v1_",
 };
 
 function getLocalCache<T>(key: string, defaultValue: T): T {
@@ -83,11 +95,17 @@ function mapModelToDbCommunity(model: Community): any {
 
 function mapDbMessageToModel(row: any): ChatMessage {
   const dateObj = row.created_at ? new Date(row.created_at) : new Date();
+  const rawReadUsers = row.read_user_ids || row.readUserIds;
+  const senderId = row.sender_id || row.senderId;
+  const readUserIds: string[] = Array.isArray(rawReadUsers)
+    ? Array.from(new Set([...rawReadUsers, senderId].filter(Boolean)))
+    : (senderId ? [senderId] : []);
+
   return {
     id: row.id,
     communityId: row.community_id || row.communityId,
     channelId: row.channel_id || row.channelId || "general",
-    senderId: row.sender_id || row.senderId,
+    senderId,
     senderName: row.sender_name || row.senderName,
     senderPronouns: row.sender_pronouns || row.senderPronouns || "",
     senderAvatar: row.sender_avatar || row.senderAvatar || "",
@@ -96,6 +114,7 @@ function mapDbMessageToModel(row: any): ChatMessage {
     timestamp: row.timestamp || formatKoreanTime(dateObj),
     createdAt: row.created_at || row.createdAt || dateObj.toISOString(),
     unreadCount: row.unread_count || row.unreadCount || 0,
+    readUserIds,
     reactions: Array.isArray(row.reactions) ? row.reactions : [],
     isSystem: !!row.is_system || !!row.isSystem,
     attachmentUrl: row.attachment_url || row.attachmentUrl || undefined,
@@ -114,6 +133,7 @@ function mapModelToDbMessage(msg: ChatMessage): any {
     sender_role: msg.senderRole || "멤버",
     content: msg.content || "",
     unread_count: msg.unreadCount || 0,
+    read_user_ids: msg.readUserIds || [msg.senderId],
     reactions: msg.reactions || [],
     attachment_url: msg.attachmentUrl || "",
     is_system: !!msg.isSystem,
@@ -811,6 +831,568 @@ export const cloudStore = {
       });
     } catch {}
 
+    return updated;
+  },
+
+  async markMessagesAsRead(communityId: string, messageIds: string[], userId: string): Promise<ChatMessage[]> {
+    if (!userId || !messageIds || messageIds.length === 0) return [];
+    const current = await this.loadMessages(communityId);
+    let changed = false;
+    const updated = current.map((msg) => {
+      if (!messageIds.includes(msg.id)) return msg;
+      const readUsers = msg.readUserIds || [msg.senderId];
+      if (!readUsers.includes(userId)) {
+        changed = true;
+        return {
+          ...msg,
+          readUserIds: [...readUsers, userId],
+        };
+      }
+      return msg;
+    });
+
+    if (changed) {
+      const cacheKey = CACHE_KEYS.MESSAGES_PREFIX + communityId;
+      setLocalCache(cacheKey, updated);
+      const cfg = getSupabaseConfig();
+      if (cfg) {
+        for (const mId of messageIds) {
+          const target = updated.find((m) => m.id === mId);
+          if (target) {
+            fetch(`${cfg.url}/rest/v1/messages?id=eq.${encodeURIComponent(mId)}`, {
+              method: "PATCH",
+              headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+              body: JSON.stringify({ read_user_ids: target.readUserIds }),
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+    return updated;
+  },
+
+  async claimCommunityOwnership(
+    communityId: string,
+    newOwnerId: string,
+    newOwnerName: string
+  ): Promise<Community | null> {
+    const list = await this.loadCommunities();
+    const idx = list.findIndex((c) => c.id === communityId);
+    if (idx < 0) return null;
+
+    const comm = list[idx];
+    const prevMembers = comm.members || [];
+    let updatedMembers = prevMembers.map((m) => {
+      if (m.userId === newOwnerId) {
+        return { ...m, role: "방장" as const };
+      } else if (m.role === "방장") {
+        return { ...m, role: "부방장" as const };
+      }
+      return m;
+    });
+
+    if (!updatedMembers.some((m) => m.userId === newOwnerId)) {
+      updatedMembers.unshift({
+        userId: newOwnerId,
+        name: newOwnerName,
+        pronouns: "관리자",
+        avatarUrl: "",
+        role: "방장",
+        joinedAt: new Date().toISOString(),
+      });
+    }
+
+    const updatedComm: Community = {
+      ...comm,
+      createdBy: newOwnerName,
+      createdById: newOwnerId,
+      members: updatedMembers,
+      memberCount: Math.max(1, updatedMembers.length),
+    };
+
+    await this.saveCommunity(updatedComm);
+
+    // Announce ownership claim in chat
+    const sysMsg: ChatMessage = {
+      id: `sys-claim-${Date.now()}`,
+      communityId,
+      channelId: "general",
+      senderId: "system",
+      senderName: "시스템",
+      senderPronouns: "공지",
+      senderAvatar: "",
+      content: `👑 최고 관리자(${newOwnerName})님이 커뮤니티 방장 권한을 공식 회수하여 신규 방장으로 지정되었습니다.`,
+      timestamp: formatKoreanTime(),
+      readUserIds: [newOwnerId],
+      reactions: [],
+      isSystem: true,
+    };
+    await this.saveMessage(communityId, sysMsg);
+
+    return updatedComm;
+  },
+
+  // ------------------------------------------------------------- Posts & Comments
+  async loadPosts(authorId?: string): Promise<Post[]> {
+    const cached = getLocalCache<Post[]>(CACHE_KEYS.POSTS, []);
+    const cfg = getSupabaseConfig();
+
+    let result = cached;
+    if (cfg) {
+      try {
+        const url = authorId
+          ? `${cfg.url}/rest/v1/posts?author_id=eq.${encodeURIComponent(authorId)}&select=*&order=created_at.desc`
+          : `${cfg.url}/rest/v1/posts?select=*&order=created_at.desc`;
+        const res = await fetch(url, { headers: supabaseHeaders(cfg) });
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows)) {
+            result = rows.map((r: any) => ({
+              id: r.id,
+              authorId: r.author_id,
+              authorName: r.author_name,
+              authorAvatar: r.author_avatar || "",
+              authorPronouns: r.author_pronouns || "",
+              content: r.content || "",
+              mediaUrl: r.media_url || "",
+              mediaType: r.media_type || "image",
+              likes: Array.isArray(r.likes) ? r.likes : [],
+              comments: Array.isArray(r.comments) ? r.comments : [],
+              createdAt: r.created_at || new Date().toISOString(),
+            }));
+            setLocalCache(CACHE_KEYS.POSTS, result);
+          }
+        }
+      } catch (e) {
+        console.warn("Supabase loadPosts error", e);
+      }
+    } else {
+      try {
+        const res = await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_posts?_t=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            result = data;
+            setLocalCache(CACHE_KEYS.POSTS, result);
+          }
+        }
+      } catch {}
+    }
+
+    if (authorId) {
+      return result.filter((p) => p.authorId === authorId);
+    }
+    return result;
+  },
+
+  async savePost(post: Post): Promise<Post[]> {
+    const cached = getLocalCache<Post[]>(CACHE_KEYS.POSTS, []);
+    const updated = [post, ...cached.filter((p) => p.id !== post.id)];
+    setLocalCache(CACHE_KEYS.POSTS, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/posts`, {
+          method: "POST",
+          headers: supabaseHeaders(cfg, {
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates",
+          }),
+          body: JSON.stringify({
+            id: post.id,
+            author_id: post.authorId,
+            author_name: post.authorName,
+            author_avatar: post.authorAvatar,
+            author_pronouns: post.authorPronouns || "",
+            content: post.content,
+            media_url: post.mediaUrl || "",
+            media_type: post.mediaType || "image",
+            likes: post.likes || [],
+            comments: post.comments || [],
+            created_at: post.createdAt,
+          }),
+        });
+      } catch (e) {
+        console.warn("Supabase savePost error", e);
+      }
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_posts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
+    return updated;
+  },
+
+  async deletePost(postId: string): Promise<Post[]> {
+    const cached = getLocalCache<Post[]>(CACHE_KEYS.POSTS, []);
+    const updated = cached.filter((p) => p.id !== postId);
+    setLocalCache(CACHE_KEYS.POSTS, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+          method: "DELETE",
+          headers: supabaseHeaders(cfg),
+        });
+      } catch {}
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_posts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
+    return updated;
+  },
+
+  async toggleLikePost(postId: string, userId: string): Promise<Post[]> {
+    const cached = getLocalCache<Post[]>(CACHE_KEYS.POSTS, []);
+    let targetPost: Post | null = null;
+    const updated = cached.map((p) => {
+      if (p.id !== postId) return p;
+      const likes = Array.isArray(p.likes) ? [...p.likes] : [];
+      const hasLiked = likes.includes(userId);
+      const nextLikes = hasLiked ? likes.filter((id) => id !== userId) : [...likes, userId];
+      targetPost = { ...p, likes: nextLikes };
+      return targetPost;
+    });
+    setLocalCache(CACHE_KEYS.POSTS, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg && targetPost) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+          method: "PATCH",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ likes: (targetPost as Post).likes }),
+        });
+      } catch {}
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_posts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
+    return updated;
+  },
+
+  async addComment(postId: string, comment: PostComment): Promise<Post[]> {
+    const cached = getLocalCache<Post[]>(CACHE_KEYS.POSTS, []);
+    let targetPost: Post | null = null;
+    const updated = cached.map((p) => {
+      if (p.id !== postId) return p;
+      const comments = Array.isArray(p.comments) ? [...p.comments, comment] : [comment];
+      targetPost = { ...p, comments };
+      return targetPost;
+    });
+    setLocalCache(CACHE_KEYS.POSTS, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg && targetPost) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/posts?id=eq.${encodeURIComponent(postId)}`, {
+          method: "PATCH",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({ comments: (targetPost as Post).comments }),
+        });
+      } catch {}
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_posts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
+    return updated;
+  },
+
+  // ------------------------------------------------------------- Follows
+  async loadFollows(): Promise<FollowRecord[]> {
+    const cached = getLocalCache<FollowRecord[]>(CACHE_KEYS.FOLLOWS, []);
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        const res = await fetch(`${cfg.url}/rest/v1/follows?select=*`, { headers: supabaseHeaders(cfg) });
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows)) {
+            const mapped = rows.map((r: any) => ({
+              followerId: r.follower_id,
+              followingId: r.following_id,
+              createdAt: r.created_at,
+            }));
+            setLocalCache(CACHE_KEYS.FOLLOWS, mapped);
+            return mapped;
+          }
+        }
+      } catch {}
+    } else {
+      try {
+        const res = await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_follows?_t=${Date.now()}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setLocalCache(CACHE_KEYS.FOLLOWS, data);
+            return data;
+          }
+        }
+      } catch {}
+    }
+    return cached;
+  },
+
+  async toggleFollow(
+    followerId: string,
+    followingId: string
+  ): Promise<{ isFollowing: boolean; followersCount: number; followingCount: number }> {
+    const all = await this.loadFollows();
+    const existingIdx = all.findIndex((f) => f.followerId === followerId && f.followingId === followingId);
+    const isNowFollowing = existingIdx < 0;
+
+    let updated: FollowRecord[];
+    if (isNowFollowing) {
+      updated = [...all, { followerId, followingId, createdAt: new Date().toISOString() }];
+    } else {
+      updated = all.filter((_, i) => i !== existingIdx);
+    }
+    setLocalCache(CACHE_KEYS.FOLLOWS, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        if (isNowFollowing) {
+          await fetch(`${cfg.url}/rest/v1/follows`, {
+            method: "POST",
+            headers: supabaseHeaders(cfg, {
+              "Content-Type": "application/json",
+              Prefer: "resolution=merge-duplicates",
+            }),
+            body: JSON.stringify({ follower_id: followerId, following_id: followingId }),
+          });
+        } else {
+          await fetch(
+            `${cfg.url}/rest/v1/follows?follower_id=eq.${encodeURIComponent(
+              followerId
+            )}&following_id=eq.${encodeURIComponent(followingId)}`,
+            { method: "DELETE", headers: supabaseHeaders(cfg) }
+          );
+        }
+      } catch {}
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_follows`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
+
+    const followersCount = updated.filter((f) => f.followingId === followingId).length;
+    const followingCount = updated.filter((f) => f.followerId === followingId).length;
+    return { isFollowing: isNowFollowing, followersCount, followingCount };
+  },
+
+  async getFollowCounts(
+    userId: string,
+    currentUserId?: string
+  ): Promise<{ followers: number; following: number; isFollowing: boolean }> {
+    const all = await this.loadFollows();
+    const followers = all.filter((f) => f.followingId === userId).length;
+    const following = all.filter((f) => f.followerId === userId).length;
+    const isFollowing = currentUserId
+      ? all.some((f) => f.followerId === currentUserId && f.followingId === userId)
+      : false;
+    return { followers, following, isFollowing };
+  },
+
+  // ------------------------------------------------------------- 1:1 Direct Messages (DM)
+  getDmConversationId(user1Id: string, user2Id: string): string {
+    return [user1Id, user2Id].sort().join("__");
+  },
+
+  async loadDmMessages(conversationId: string): Promise<DmMessage[]> {
+    const cacheKey = CACHE_KEYS.DM_PREFIX + conversationId;
+    const cached = getLocalCache<DmMessage[]>(cacheKey, []);
+    const cfg = getSupabaseConfig();
+
+    if (cfg) {
+      try {
+        const res = await fetch(
+          `${cfg.url}/rest/v1/dm_messages?conversation_id=eq.${encodeURIComponent(
+            conversationId
+          )}&order=created_at.asc&limit=300`,
+          { headers: supabaseHeaders(cfg) }
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows)) {
+            const mapped: DmMessage[] = rows.map((r: any) => ({
+              id: r.id,
+              conversationId: r.conversation_id,
+              senderId: r.sender_id,
+              senderName: r.sender_name,
+              senderAvatar: r.sender_avatar || "",
+              senderPronouns: r.sender_pronouns || "",
+              recipientId: r.recipient_id,
+              recipientName: r.recipient_name,
+              recipientAvatar: r.recipient_avatar || "",
+              content: r.content || "",
+              attachmentUrl: r.attachment_url || undefined,
+              readUserIds: Array.isArray(r.read_user_ids) ? r.read_user_ids : [r.sender_id],
+              timestamp: formatKoreanTime(new Date(r.created_at || Date.now())),
+              createdAt: r.created_at || new Date().toISOString(),
+            }));
+            setLocalCache(cacheKey, mapped);
+            return mapped;
+          }
+        }
+      } catch {}
+    } else {
+      try {
+        const res = await fetch(
+          `${CLOUD_FALLBACK_BASE}/chamchi_dm_${encodeURIComponent(conversationId)}?_t=${Date.now()}`,
+          { cache: "no-store" }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setLocalCache(cacheKey, data);
+            return data;
+          }
+        }
+      } catch {}
+    }
+    return cached;
+  },
+
+  async saveDmMessage(msg: DmMessage): Promise<DmMessage[]> {
+    const cacheKey = CACHE_KEYS.DM_PREFIX + msg.conversationId;
+    const cached = getLocalCache<DmMessage[]>(cacheKey, []);
+    const updated = [...cached.filter((m) => m.id !== msg.id), msg];
+    setLocalCache(cacheKey, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/dm_messages`, {
+          method: "POST",
+          headers: supabaseHeaders(cfg, {
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates",
+          }),
+          body: JSON.stringify({
+            id: msg.id,
+            conversation_id: msg.conversationId,
+            sender_id: msg.senderId,
+            sender_name: msg.senderName,
+            sender_avatar: msg.senderAvatar,
+            sender_pronouns: msg.senderPronouns || "",
+            recipient_id: msg.recipientId,
+            recipient_name: msg.recipientName,
+            recipient_avatar: msg.recipientAvatar,
+            content: msg.content,
+            attachment_url: msg.attachmentUrl || "",
+            read_user_ids: msg.readUserIds || [msg.senderId],
+            created_at: msg.createdAt,
+          }),
+        });
+      } catch {}
+    } else {
+      try {
+        await fetch(
+          `${CLOUD_FALLBACK_BASE}/chamchi_dm_${encodeURIComponent(msg.conversationId)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updated),
+          }
+        );
+      } catch {}
+    }
+    return updated;
+  },
+
+  async markDmMessagesAsRead(conversationId: string, userId: string): Promise<DmMessage[]> {
+    const msgs = await this.loadDmMessages(conversationId);
+    let changed = false;
+    const updated = msgs.map((m) => {
+      const readUsers = m.readUserIds || [m.senderId];
+      if (!readUsers.includes(userId)) {
+        changed = true;
+        return {
+          ...m,
+          readUserIds: [...readUsers, userId],
+        };
+      }
+      return m;
+    });
+
+    if (changed) {
+      const cacheKey = CACHE_KEYS.DM_PREFIX + conversationId;
+      setLocalCache(cacheKey, updated);
+
+      const cfg = getSupabaseConfig();
+      if (cfg) {
+        for (const m of updated) {
+          fetch(`${cfg.url}/rest/v1/dm_messages?id=eq.${encodeURIComponent(m.id)}`, {
+            method: "PATCH",
+            headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+            body: JSON.stringify({ read_user_ids: m.readUserIds }),
+          }).catch(() => {});
+        }
+      } else {
+        fetch(
+          `${CLOUD_FALLBACK_BASE}/chamchi_dm_${encodeURIComponent(conversationId)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updated),
+          }
+        ).catch(() => {});
+      }
+    }
+    return updated;
+  },
+
+  async deleteMessage(communityId: string, messageId: string): Promise<ChatMessage[]> {
+    const current = await this.loadMessages(communityId);
+    const updated = current.filter((m) => m.id !== messageId);
+    const cacheKey = CACHE_KEYS.MESSAGES_PREFIX + communityId;
+    setLocalCache(cacheKey, updated);
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/messages?id=eq.${encodeURIComponent(messageId)}`, {
+          method: "DELETE",
+          headers: supabaseHeaders(cfg),
+        });
+      } catch (e) {
+        console.warn("Supabase deleteMessage error", e);
+      }
+    } else {
+      try {
+        await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_messages_${communityId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      } catch {}
+    }
     return updated;
   },
 };

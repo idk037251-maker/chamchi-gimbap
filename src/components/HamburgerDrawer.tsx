@@ -3,6 +3,7 @@
 import React from "react";
 import { useApp } from "@/context/AppContext";
 import { deduplicateCommunities } from "@/lib/communityUtils";
+import { isSuperAdmin } from "@/types/chat";
 import {
   X,
   PlusCircle,
@@ -13,10 +14,9 @@ import {
   Sun,
   Moon,
   Sparkles,
-  CheckCircle2,
-  Hash,
   Database,
-  Cloud,
+  MessageSquareHeart,
+  User,
 } from "lucide-react";
 
 export default function HamburgerDrawer() {
@@ -32,6 +32,9 @@ export default function HamburgerDrawer() {
     joinedCommunityIds,
     activeCommunityId,
     setActiveCommunityId,
+    closeDm,
+    setIsDmDrawerOpen,
+    inspectUser,
     joinCommunity,
     theme,
     toggleTheme,
@@ -53,6 +56,8 @@ export default function HamburgerDrawer() {
       : currentUser.status === "dnd"
       ? "bg-rose-500"
       : "bg-slate-400";
+
+  const iAmAdmin = isSuperAdmin(currentUser);
 
   return (
     <>
@@ -144,28 +149,41 @@ export default function HamburgerDrawer() {
                 <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-[#5865F2]/15 dark:bg-[#5865F2]/25 text-[#5865F2] dark:text-indigo-300 border border-[#5865F2]/30">
                   {currentUser.pronouns}
                 </span>
+                {iAmAdmin && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950">
+                    👑 최고 관리자
+                  </span>
+                )}
               </div>
 
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 @{currentUser.username || currentUser.name}
               </p>
 
-              {/* BIO box */}
-              <div className="mt-3 p-2.5 rounded-xl bg-white dark:bg-[#2b2d31] border border-slate-200/70 dark:border-white/5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
-                {currentUser.bio || "등록된 소개글(BIO)이 없습니다."}
-              </div>
+              {/* View My Profile & Feed Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsDrawerOpen(false);
+                  inspectUser(currentUser);
+                }}
+                className="mt-2.5 w-full py-1.5 px-3 rounded-xl bg-slate-200/70 dark:bg-[#2b2d31] hover:bg-[#5865F2] hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>내 프로필 및 피드(사진/글) 보기</span>
+              </button>
             </div>
           </div>
         </div>
 
-        {/* 2. Primary Actions: '커뮤니티 만들기' & '클라우드 DB 연동' */}
+        {/* 2. Primary Actions: '커뮤니티 만들기' & '1:1 DM' & '클라우드 DB' */}
         <div className="px-4 pb-3 space-y-2">
           <button
             onClick={() => {
               setIsDrawerOpen(false);
               setIsCreateModalOpen(true);
             }}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#5865F2] to-indigo-600 hover:from-[#4752C4] hover:to-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition transform active:scale-[0.99]"
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#5865F2] to-indigo-600 hover:from-[#4752C4] hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition"
           >
             <PlusCircle className="w-4 h-4 text-[#FEE500]" />
             <span>+ 커뮤니티 만들기</span>
@@ -174,9 +192,25 @@ export default function HamburgerDrawer() {
           <button
             onClick={() => {
               setIsDrawerOpen(false);
+              setIsDmDrawerOpen(true);
+            }}
+            className="w-full py-2.5 px-3.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] hover:bg-slate-200 dark:hover:bg-[#35373c] text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between transition border border-slate-200/60 dark:border-white/5"
+          >
+            <span className="flex items-center gap-2">
+              <MessageSquareHeart className="w-4 h-4 text-pink-500" />
+              <span>1:1 개인 DM 대화 목록</span>
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEE500] text-[#3C1E1E] font-extrabold">
+              열기
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsDrawerOpen(false);
               setIsCloudConfigModalOpen(true);
             }}
-            className={`w-full py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-between border transition ${
+            className={`w-full py-2 px-3.5 rounded-xl text-xs font-bold flex items-center justify-between border transition ${
               isCloudConnected
                 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                 : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
@@ -187,7 +221,7 @@ export default function HamburgerDrawer() {
               Supabase 클라우드 DB 연동
             </span>
             <span
-              className={`w-2.5 h-2.5 rounded-full ${
+              className={`w-2 h-2 rounded-full ${
                 isCloudConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
               }`}
             />
@@ -195,6 +229,7 @@ export default function HamburgerDrawer() {
 
           <button
             onClick={() => {
+              closeDm();
               setActiveCommunityId(null);
               setIsDrawerOpen(false);
             }}
@@ -217,89 +252,79 @@ export default function HamburgerDrawer() {
         {/* 3. Joined / Available Communities List */}
         <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
           <div>
-            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400 mb-2 px-1">
-              <span>참여 중인 커뮤니티 ({(joinedCommunities || []).length})</span>
-              <Sparkles className="w-3 h-3 text-[#FEE500]" />
+            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2 px-1">
+              <span className="flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-[#5865F2]" />
+                참여 중인 커뮤니티 ({joinedCommunities.length})
+              </span>
             </div>
-            <div className="space-y-1.5">
-              {joinedCommunities.map((comm) => {
-                const isActive = activeCommunityId === comm.id;
-                return (
-                  <button
-                    key={comm.id}
-                    onClick={() => {
-                      joinCommunity(comm.id);
-                      setIsDrawerOpen(false);
-                    }}
-                    className={`w-full p-2.5 rounded-xl flex items-center gap-3 text-left transition ${
-                      isActive
-                        ? "bg-[#5865F2] text-white shadow-sm"
-                        : "hover:bg-slate-100 dark:hover:bg-[#35373c] text-slate-800 dark:text-slate-200"
-                    }`}
-                  >
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-inner flex-shrink-0"
-                      style={{ background: comm.bannerGradient }}
+
+            {joinedCommunities.length === 0 ? (
+              <div className="p-3 text-center rounded-xl bg-slate-50 dark:bg-[#1e1f22] text-xs text-slate-400">
+                아직 참여한 커뮤니티가 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {joinedCommunities.map((comm) => {
+                  const isActive = activeCommunityId === comm.id;
+                  return (
+                    <button
+                      key={comm.id}
+                      onClick={() => {
+                        closeDm();
+                        joinCommunity(comm.id);
+                        setIsDrawerOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition ${
+                        isActive
+                          ? "bg-[#5865F2] text-white shadow-xs"
+                          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e1f22]"
+                      }`}
                     >
-                      {comm.iconEmoji}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-bold text-xs truncate">{comm.name}</p>
-                      <p
-                        className={`text-[11px] truncate flex items-center gap-1 mt-0.5 ${
-                          isActive
-                            ? "text-indigo-100"
-                            : "text-slate-500 dark:text-slate-400"
-                        }`}
-                      >
-                        <Hash className="w-3 h-3" />
-                        <span>{comm.category}</span>
-                        <span>·</span>
-                        <Users className="w-3 h-3" />
-                        <span>{comm.memberCount.toLocaleString()}명</span>
-                      </p>
-                    </div>
-                    {isActive && (
-                      <CheckCircle2 className="w-4 h-4 text-[#FEE500] flex-shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-base">{comm.iconEmoji}</span>
+                        <span className="truncate">{comm.name}</span>
+                      </div>
+                      <span className="text-[10px] opacity-75">{comm.memberCount}명</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* 4. Bottom Account & Theme Footer */}
-        <div className="p-3.5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#1e1f22] flex items-center justify-between gap-2">
-          <button
-            onClick={() => {
-              setIsDrawerOpen(false);
-              setIsProfileModalOpen(true);
-            }}
-            className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-slate-100 dark:hover:bg-[#35373c] border border-slate-200 dark:border-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 transition"
-          >
-            <Settings className="w-3.5 h-3.5 text-[#5865F2]" />
-            <span>내 프로필 편집</span>
-          </button>
-
+        {/* 4. Bottom Footer: Dark/Light Mode + Logout */}
+        <div className="p-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-between gap-2 bg-slate-50 dark:bg-[#1e1f22]/60">
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-slate-100 dark:hover:bg-[#35373c] border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 transition"
-            title={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
+            className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-[#2b2d31] hover:bg-slate-100 dark:hover:bg-[#35373c] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2 transition"
           >
             {theme === "dark" ? (
-              <Sun className="w-4 h-4 text-amber-400" />
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span>라이트 모드</span>
+              </>
             ) : (
-              <Moon className="w-4 h-4 text-indigo-600" />
+              <>
+                <Moon className="w-3.5 h-3.5 text-indigo-600" />
+                <span>다크 모드</span>
+              </>
             )}
           </button>
 
           <button
-            onClick={logout}
-            className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 transition"
+            onClick={() => {
+              if (confirm("로그아웃 하시겠습니까?")) {
+                logout();
+                setIsDrawerOpen(false);
+              }
+            }}
+            className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white text-xs font-bold flex items-center gap-1.5 transition"
             title="로그아웃"
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-3.5 h-3.5" />
+            <span>로그아웃</span>
           </button>
         </div>
       </aside>
