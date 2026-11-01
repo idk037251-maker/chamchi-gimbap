@@ -4,6 +4,8 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { UserProfile, Community, ChatMessage, ChatStyleMode } from "@/types/chat";
 import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import { cloudStore } from "@/lib/cloudStore";
+import { filterProfanity } from "@/lib/profanityFilter";
+import { compressImage } from "@/lib/imageUtils";
 
 type NewCommunityInput = {
   name: string;
@@ -329,26 +331,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const updated: UserProfile = { ...currentUser, ...updates };
     setCurrentUser(updated);
     saveLocal(STORAGE_KEYS.USER, updated);
+    if (typeof window !== "undefined" && updated.username) {
+      try {
+        localStorage.setItem("chamchi_user_vault_" + updated.username.toLowerCase(), JSON.stringify(updated));
+      } catch {}
+    }
     await cloudStore.updateUser(updated);
   };
 
-  // Convert uploaded image to Base64 data URL for permanent universal sharing
+  // Convert uploaded image to lightweight compressed Base64 for permanent cloud storage
   const uploadAvatarOrBannerFile = async (
-    _bucket: "avatars" | "banners",
+    bucket: "avatars" | "banners",
     file: File
   ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-        } else {
-          reject(new Error("파일 읽기 실패"));
-        }
-      };
-      reader.onerror = () => reject(new Error("파일 읽기 에러"));
-      reader.readAsDataURL(file);
-    });
+    if (bucket === "avatars") {
+      return await compressImage(file, 256, 256, 0.85);
+    } else {
+      return await compressImage(file, 900, 300, 0.85);
+    }
   };
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
@@ -366,6 +366,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (targetComm && (targetComm.kickedUserIds || []).includes(currentUser.id)) {
       alert("해당 커뮤니티에서 내보내진(강퇴된) 계정이므로 입장할 수 없습니다.");
       return false;
+    }
+
+    // Record local join timestamp if not present
+    const joinKey = `chamchi_join_${communityId}_${currentUser.id}`;
+    if (typeof window !== "undefined" && !localStorage.getItem(joinKey)) {
+      localStorage.setItem(joinKey, new Date().toISOString());
     }
 
     // Call cloudStore to add to members and persist
@@ -514,6 +520,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser || !activeCommunityId) return;
     if (!content.trim() && !attachmentUrl) return;
 
+    const activeComm = communities.find((c) => c.id === activeCommunityId);
+    const isOwner =
+      !!activeComm &&
+      (activeComm.createdById === currentUser.id ||
+        activeComm.createdBy === currentUser.name ||
+        (!!currentUser.username && activeComm.createdBy === currentUser.username));
+
     const newMsg: ChatMessage = {
       id: newId("msg"),
       communityId: activeCommunityId,
@@ -522,9 +535,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       senderName: currentUser.name,
       senderPronouns: currentUser.pronouns || "",
       senderAvatar: currentUser.avatarUrl || AVATAR_PRESETS[0],
-      senderRole: "멤버",
-      content: content.trim(),
+      senderRole: isOwner ? "방장" : "멤버",
+      content: filterProfanity(content.trim()),
       timestamp: formatKoreanTime(),
+      createdAt: new Date().toISOString(),
       unreadCount: 0,
       reactions: [],
       isSystem: false,

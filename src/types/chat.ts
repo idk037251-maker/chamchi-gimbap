@@ -68,6 +68,7 @@ export interface ChatMessage {
   senderRole?: "방장" | "부방장" | "멤버" | "BOT";
   content: string;
   timestamp: string;
+  createdAt?: string; // ISO 8601 string for join-time filter
   unreadCount?: number; // KakaoTalk '1' unread indicator style
   reactions: Reaction[];
   isSystem?: boolean;

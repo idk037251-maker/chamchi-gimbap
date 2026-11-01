@@ -40,6 +40,7 @@ export default function ProfileSettingsModal() {
   const [statusMessage, setStatusMessage] = useState("");
   const [status, setStatus] = useState<UserStatus>("online");
   const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
 
   // Password change states
@@ -145,24 +146,29 @@ export default function ProfileSettingsModal() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || isSaving) return;
 
-    await updateProfile({
-      name: name.trim(),
-      pronouns: pronounText.trim() || currentUser.pronouns,
-      avatarUrl,
-      bannerUrl: bannerUrl.trim(),
-      bannerColor,
-      bio: bio.trim(),
-      statusMessage: statusMessage.trim(),
-      status,
-    });
+    try {
+      setIsSaving(true);
+      await updateProfile({
+        name: name.trim(),
+        pronouns: pronounText.trim() || currentUser.pronouns,
+        avatarUrl,
+        bannerUrl: bannerUrl.trim(),
+        bannerColor,
+        bio: bio.trim(),
+        statusMessage: statusMessage.trim(),
+        status,
+      });
 
-    setSavedToast(true);
-    setTimeout(() => {
-      setSavedToast(false);
-      setIsProfileModalOpen(false);
-    }, 800);
+      setSavedToast(true);
+      setTimeout(() => {
+        setSavedToast(false);
+        setIsProfileModalOpen(false);
+      }, 700);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -549,10 +555,11 @@ export default function ProfileSettingsModal() {
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold shadow-md flex items-center gap-1.5"
+              disabled={isSaving}
+              className="px-5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-bold shadow-md flex items-center gap-1.5 disabled:opacity-50"
             >
-              <Save className="w-4 h-4" />
-              변경사항 저장
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{isSaving ? "저장 중..." : "변경사항 저장"}</span>
             </button>
           </div>
         </form>

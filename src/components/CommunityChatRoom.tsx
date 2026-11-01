@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
+import { compressImage } from "@/lib/imageUtils";
 import {
   Hash,
   Megaphone,
@@ -20,7 +21,19 @@ import {
   AlertTriangle,
   UserX,
   Crown,
+  Image as ImageIcon,
+  Smile,
+  Download,
 } from "lucide-react";
+
+const EMOJIS = [
+  "🍙", "🍱", "🍣", "🍜", "🍚", "🍤",
+  "😀", "😂", "🤣", "🥰", "😍", "😎",
+  "🤔", "🥳", "😭", "😱", "🥺", "😴",
+  "👍", "👏", "🙌", "❤️", "💖", "🔥",
+  "✨", "🎉", "💯", "🚀", "🍀", "💡",
+  "☕", "🎮", "🌟", "🌈", "🍕", "🍔",
+];
 
 export default function CommunityChatRoom() {
   const {
@@ -44,6 +57,15 @@ export default function CommunityChatRoom() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [kickTarget, setKickTarget] = useState<{ userId: string; name: string } | null>(null);
   const [isKicking, setIsKicking] = useState(false);
+
+  // Media & Emoji states
+  const [pendingImage, setPendingImage] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
   const [inspectedUser, setInspectedUser] = useState<{
     name: string;
     pronouns: string;
@@ -58,11 +80,44 @@ export default function CommunityChatRoom() {
     community?.channels.find((ch) => ch.id === activeChannelId) ||
     community?.channels[0];
 
-  const roomMessages = messages.filter(
-    (m) =>
-      m.communityId === activeCommunityId &&
-      m.channelId === (activeChannel?.id || "general")
-  );
+  const isOwner =
+    !!currentUser &&
+    !!community &&
+    (community.createdById === currentUser.id ||
+      community.createdBy === currentUser.name ||
+      (!!currentUser.username && community.createdBy === currentUser.username));
+
+  // User join timestamp filter (hide messages prior to joining)
+  const myMemberRecord = (community?.members || []).find((m) => m.userId === currentUser?.id);
+  const storedJoinTime = typeof window !== "undefined" && community && currentUser
+    ? localStorage.getItem(`chamchi_join_${community.id}_${currentUser.id}`)
+    : null;
+  const myJoinedAtIso = isOwner ? null : (myMemberRecord?.joinedAt || storedJoinTime);
+
+  const roomMessages = messages.filter((m) => {
+    if (m.communityId !== activeCommunityId) return false;
+    if (m.channelId !== (activeChannel?.id || "general")) return false;
+
+    // Room owner sees all past and present messages
+    if (isOwner) return true;
+
+    // For other members, hide messages created before join time
+    if (myJoinedAtIso) {
+      let msgTimeMs = 0;
+      if (m.createdAt) {
+        msgTimeMs = new Date(m.createdAt).getTime();
+      } else if (m.id.startsWith("msg-")) {
+        const rawNum = parseInt(m.id.replace("msg-", "").split("-")[0], 10);
+        if (!isNaN(rawNum)) msgTimeMs = rawNum;
+      }
+      const joinTimeMs = new Date(myJoinedAtIso).getTime();
+      if (msgTimeMs && msgTimeMs < joinTimeMs - 3000) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -84,12 +139,6 @@ export default function CommunityChatRoom() {
       </div>
     );
   }
-
-  const isOwner =
-    !!currentUser &&
-    (community.createdById === currentUser.id ||
-      community.createdBy === currentUser.name ||
-      (!!currentUser.username && community.createdBy === currentUser.username));
 
   // Auto-kick listener for current user
   useEffect(() => {
@@ -125,19 +174,43 @@ export default function CommunityChatRoom() {
     }
   };
 
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsUploadingImage(true);
+      const compressed = await compressImage(file, 1200, 1200, 0.85);
+      setPendingImage(compressed);
+    } catch (err: any) {
+      alert("사진 첨부 처리 실패: " + err.message);
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    setInputText((prev) => prev + emoji);
+    setShowEmojiPicker(false);
+  };
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    sendMessage(inputText);
+    if (!inputText.trim() && !pendingImage) return;
+    sendMessage(inputText, pendingImage || undefined);
     setInputText("");
+    setPendingImage("");
+    setShowEmojiPicker(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (inputText.trim()) {
-        sendMessage(inputText);
+      if (inputText.trim() || pendingImage) {
+        sendMessage(inputText, pendingImage || undefined);
         setInputText("");
+        setPendingImage("");
+        setShowEmojiPicker(false);
       }
     }
   };
@@ -417,7 +490,23 @@ export default function CommunityChatRoom() {
                             : "bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 rounded-tl-xs"
                         }`}
                       >
-                        {msg.content}
+                        {msg.content && <div>{msg.content}</div>}
+                        {msg.attachmentUrl && (
+                          <div className={msg.content ? "mt-2" : ""}>
+                            <img
+                              src={msg.attachmentUrl}
+                              alt="첨부 사진"
+                              onClick={() => setLightboxImage(msg.attachmentUrl || null)}
+                              className="rounded-xl max-w-[240px] sm:max-w-[320px] max-h-60 object-cover cursor-pointer hover:opacity-90 hover:scale-[1.01] transition border border-black/10 dark:border-white/10 shadow-sm"
+                            />
+                            <p
+                              onClick={() => setLightboxImage(msg.attachmentUrl || null)}
+                              className="text-[10px] text-slate-400 mt-1 cursor-pointer hover:underline"
+                            >
+                              🔍 클릭하여 원본 사진 보기
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <span className="text-[10px] text-slate-400 flex-shrink-0">{msg.timestamp}</span>
                     </div>
@@ -453,8 +542,98 @@ export default function CommunityChatRoom() {
         </div>
 
         {/* Input Bar */}
-        <form onSubmit={handleSend} className="p-3 sm:p-4 bg-white dark:bg-[#313338] border-t border-slate-200 dark:border-white/10">
-          <div className="flex items-end gap-2 bg-slate-100 dark:bg-[#383a40] rounded-2xl px-3.5 py-2 border border-slate-200/80 dark:border-white/5 focus-within:ring-2 focus-within:ring-[#5865F2]">
+        <form onSubmit={handleSend} className="p-3 sm:p-4 bg-white dark:bg-[#313338] border-t border-slate-200 dark:border-white/10 relative">
+          {/* Emoji Picker Popover */}
+          {showEmojiPicker && (
+            <div
+              ref={emojiPickerRef}
+              className="absolute bottom-full mb-3 left-4 sm:left-6 z-40 p-3 bg-white dark:bg-[#2b2d31] rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 w-72 animate-in fade-in duration-150"
+            >
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200 dark:border-white/10 text-xs font-bold text-slate-800 dark:text-slate-100">
+                <span>🍙 이모티콘 선택</span>
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-6 gap-2 text-xl max-h-48 overflow-y-auto p-1">
+                {EMOJIS.map((emoji, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleEmojiSelect(emoji)}
+                    className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-[#1e1f22] transition transform hover:scale-125 flex items-center justify-center cursor-pointer"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Image Preview Bar */}
+          {pendingImage && (
+            <div className="mb-2 p-2.5 bg-slate-100 dark:bg-[#2b2d31] rounded-2xl border border-slate-200 dark:border-white/10 flex items-center justify-between max-w-sm shadow-sm animate-in fade-in duration-150">
+              <div className="flex items-center gap-2.5">
+                <img src={pendingImage} alt="미리보기" className="w-12 h-12 rounded-xl object-cover border border-slate-300 dark:border-white/10" />
+                <div className="text-xs">
+                  <p className="font-bold text-slate-800 dark:text-slate-200">첨부된 사진</p>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ 전송 준비 완료</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingImage("")}
+                className="p-1.5 rounded-xl hover:bg-rose-500/15 text-rose-500 transition"
+                title="사진 첨부 취소"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Hidden File Input for Image Attachment */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageFileChange}
+          />
+
+          <div className="flex items-end gap-2 bg-slate-100 dark:bg-[#383a40] rounded-2xl px-3 py-2 border border-slate-200/80 dark:border-white/5 focus-within:ring-2 focus-within:ring-[#5865F2]">
+            {/* Image Attachment Button */}
+            <button
+              type="button"
+              disabled={isUploadingImage}
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-[#5865F2] hover:bg-white dark:hover:bg-[#2b2d31] transition shrink-0"
+              title="사진 첨부하기"
+            >
+              {isUploadingImage ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#5865F2]" />
+              ) : (
+                <ImageIcon className="w-4 h-4" />
+              )}
+            </button>
+
+            {/* Emoji Picker Button */}
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((prev) => !prev)}
+              className={`p-2 rounded-xl transition shrink-0 ${
+                showEmojiPicker
+                  ? "bg-[#FEE500] text-[#3C1E1E]"
+                  : "text-slate-500 dark:text-slate-400 hover:text-amber-500 hover:bg-white dark:hover:bg-[#2b2d31]"
+              }`}
+              title="이모티콘 선택"
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+
             <textarea
               rows={1}
               value={inputText}
@@ -465,9 +644,9 @@ export default function CommunityChatRoom() {
             />
             <button
               type="submit"
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() && !pendingImage}
               className={`px-4 py-2 rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition ${
-                inputText.trim()
+                inputText.trim() || pendingImage
                   ? "bg-[#FEE500] hover:bg-[#FADA0A] text-[#3C1E1E] shadow-xs"
                   : "bg-slate-200 dark:bg-[#2b2d31] text-slate-400 cursor-not-allowed"
               }`}
@@ -584,6 +763,43 @@ export default function CommunityChatRoom() {
         </div>
       )}
 
+      {/* Full-screen Lightbox Image Modal */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-zoom-out animate-in fade-in duration-150"
+        >
+          <div
+            className="relative max-w-4xl max-h-[92vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage}
+              alt="원본 사진 미리보기"
+              className="max-w-full max-h-[82vh] rounded-3xl object-contain shadow-2xl border border-white/10"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <a
+                href={lightboxImage}
+                download="chamchi-chat-image.png"
+                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>사진 다운로드</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="px-4 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>닫기</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal (Owner Only) */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
@@ -640,6 +856,43 @@ export default function CommunityChatRoom() {
         </div>
       )}
 
+      {/* Full-screen Lightbox Image Modal */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-zoom-out animate-in fade-in duration-150"
+        >
+          <div
+            className="relative max-w-4xl max-h-[92vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage}
+              alt="원본 사진 미리보기"
+              className="max-w-full max-h-[82vh] rounded-3xl object-contain shadow-2xl border border-white/10"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <a
+                href={lightboxImage}
+                download="chamchi-chat-image.png"
+                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>사진 다운로드</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="px-4 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>닫기</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Kick Member Confirmation Modal (Owner Only) */}
       {kickTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
@@ -690,6 +943,43 @@ export default function CommunityChatRoom() {
                     <span>내보내기 승인</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen Lightbox Image Modal */}
+      {lightboxImage && (
+        <div
+          onClick={() => setLightboxImage(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md cursor-zoom-out animate-in fade-in duration-150"
+        >
+          <div
+            className="relative max-w-4xl max-h-[92vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage}
+              alt="원본 사진 미리보기"
+              className="max-w-full max-h-[82vh] rounded-3xl object-contain shadow-2xl border border-white/10"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <a
+                href={lightboxImage}
+                download="chamchi-chat-image.png"
+                className="px-4 py-2 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>사진 다운로드</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="px-4 py-2 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-bold backdrop-blur-md transition flex items-center gap-1.5"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>닫기</span>
               </button>
             </div>
           </div>

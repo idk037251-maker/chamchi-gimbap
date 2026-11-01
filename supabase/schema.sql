@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS public.messages (
   content TEXT NOT NULL,
   unread_count INT DEFAULT 0,
   reactions JSONB DEFAULT '[]'::jsonb,
+  attachment_url TEXT DEFAULT '',            -- 첨부 이미지 URL
   is_system BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

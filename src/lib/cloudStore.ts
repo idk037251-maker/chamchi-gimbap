@@ -19,6 +19,37 @@ export const cloudStore = {
     }
   },
 
+  async loadSingleUser(uname: string): Promise<StoredUser | null> {
+    try {
+      const res = await fetch(
+        `${CLOUD_BASE}/chamchi_user_${encodeURIComponent(uname.toLowerCase())}?_t=${Date.now()}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async saveSingleUser(uname: string, user: StoredUser): Promise<void> {
+    const key = uname.toLowerCase();
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("chamchi_user_vault_" + key, JSON.stringify(user));
+      } catch {}
+    }
+    try {
+      await fetch(`${CLOUD_BASE}/chamchi_user_${encodeURIComponent(key)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(user),
+      });
+    } catch (e) {
+      console.warn("Failed to save single user to cloud:", e);
+    }
+  },
+
   async registerUser(userData: {
     username: string;
     password: string;
@@ -31,10 +62,14 @@ export const cloudStore = {
     statusMessage: string;
   }): Promise<{ success: boolean; error?: string; user?: UserProfile }> {
     try {
-      const users = await this.loadUsers();
       const uname = userData.username.trim().toLowerCase();
       if (!uname) return { success: false, error: "아이디를 입력해 주세요." };
-      if (users[uname]) return { success: false, error: "이미 사용 중인 아이디입니다." };
+
+      const users = await this.loadUsers();
+      const existingSingle = await this.loadSingleUser(uname);
+      if (users[uname] || existingSingle) {
+        return { success: false, error: "이미 사용 중인 아이디입니다." };
+      }
 
       const newUser: StoredUser = {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -53,8 +88,11 @@ export const cloudStore = {
         authProvider: "site",
       };
 
-      users[uname] = newUser;
+      // 1. Save to dedicated single-user key
+      await this.saveSingleUser(uname, newUser);
 
+      // 2. Also register in global users directory
+      users[uname] = newUser;
       await fetch(`${CLOUD_BASE}/chamchi_users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -73,16 +111,52 @@ export const cloudStore = {
     password: string
   ): Promise<{ success: boolean; error?: string; user?: UserProfile }> {
     try {
-      const users = await this.loadUsers();
       const uname = username.trim().toLowerCase();
-      const found = users[uname];
+      if (!uname) return { success: false, error: "아이디를 입력해 주세요." };
+
+      // 1. Check dedicated single user key first (preserves most recent avatar/bio/banner)
+      let found = await this.loadSingleUser(uname);
+
+      // 2. If not found in single key, check global user list
+      if (!found) {
+        const users = await this.loadUsers();
+        found = users[uname];
+      }
+
+      // 3. Fallback to local storage vault
+      if (!found && typeof window !== "undefined") {
+        const localVault = localStorage.getItem("chamchi_user_vault_" + uname);
+        if (localVault) {
+          try {
+            found = JSON.parse(localVault);
+          } catch {}
+        }
+      }
+
       if (!found) {
         return { success: false, error: "존재하지 않는 아이디입니다." };
       }
       if (found.password !== password) {
         return { success: false, error: "비밀번호가 일치하지 않습니다." };
       }
-      const { password: _, ...safeUser } = found;
+
+      const activeUser: StoredUser = { ...found };
+
+      // If local storage has any newer profile edits, merge them
+      if (typeof window !== "undefined") {
+        const localVault = localStorage.getItem("chamchi_user_vault_" + uname);
+        if (localVault) {
+          try {
+            const vaultUser = JSON.parse(localVault);
+            Object.assign(activeUser, vaultUser);
+          } catch {}
+        }
+      }
+
+      // Synchronize single-user key
+      this.saveSingleUser(uname, activeUser).catch(() => {});
+
+      const { password: _, ...safeUser } = activeUser;
       return { success: true, user: safeUser };
     } catch (err: any) {
       return { success: false, error: "로그인 처리 실패: " + err.message };
@@ -91,17 +165,39 @@ export const cloudStore = {
 
   async updateUser(user: UserProfile): Promise<boolean> {
     try {
-      const users = await this.loadUsers();
-      const uname = (user.username || "").toLowerCase();
-      if (!uname || !users[uname]) return false;
-      users[uname] = { ...users[uname], ...user };
-      await fetch(`${CLOUD_BASE}/chamchi_users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(users),
-      });
+      const uname = (user.username || "").trim().toLowerCase();
+      if (!uname) return false;
+
+      // 1. Fetch current stored user
+      let currentStored = await this.loadSingleUser(uname);
+      if (!currentStored) {
+        const users = await this.loadUsers();
+        currentStored = users[uname];
+      }
+
+      const mergedUser: StoredUser = {
+        ...(currentStored || { password: "" }),
+        ...user,
+        username: uname,
+      };
+
+      // 2. Save directly to dedicated single-user key
+      await this.saveSingleUser(uname, mergedUser);
+
+      // 3. Also update main user list in background
+      try {
+        const users = await this.loadUsers();
+        users[uname] = mergedUser;
+        await fetch(`${CLOUD_BASE}/chamchi_users`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(users),
+        });
+      } catch {}
+
       return true;
-    } catch {
+    } catch (err) {
+      console.error("Failed to update user profile in cloud:", err);
       return false;
     }
   },
@@ -348,8 +444,12 @@ export const cloudStore = {
 
   async saveMessage(communityId: string, newMsg: ChatMessage): Promise<ChatMessage[]> {
     try {
+      const msgWithTime: ChatMessage = {
+        ...newMsg,
+        createdAt: newMsg.createdAt || new Date().toISOString(),
+      };
       const current = await this.loadMessages(communityId);
-      const updated = [...current, newMsg];
+      const updated = [...current, msgWithTime];
       await fetch(`${CLOUD_BASE}/chamchi_messages_${communityId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
