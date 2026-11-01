@@ -75,8 +75,9 @@ export default function HamburgerDrawer() {
         <div className="px-4 py-3.5 flex items-center justify-between border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#FEE500]" />
-            <span className="font-extrabold text-sm tracking-tight">
-              KakaoCord 내비게이션
+            <span className="font-extrabold text-sm tracking-tight flex items-center gap-1.5">
+              <span>🍙</span>
+              <span>참치김밥 메뉴</span>
             </span>
           </div>
           <button

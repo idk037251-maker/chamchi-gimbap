@@ -18,7 +18,7 @@ export default function HomePage() {
   if (!isHydrated) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[#1e1f22] text-slate-400 text-sm">
-        KakaoCord 불러오는 중...
+        참치김밥 불러오는 중...
       </div>
     );
   }

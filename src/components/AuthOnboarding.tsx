@@ -180,15 +180,15 @@ export default function AuthOnboarding() {
         <div className="relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/15 mb-6">
             <span className="w-2.5 h-2.5 rounded-full bg-[#FEE500] animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-wider">KakaoCord Community</span>
+            <span className="text-xs font-bold uppercase tracking-wider">🍙 참치김밥 커뮤니티</span>
           </div>
           <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight leading-tight mb-4">
-            오픈채팅의 친근함과
+            맛있고 즐거운 소통,
             <br />
-            <span className="text-[#FEE500]">디스코드의 소통</span>을 하나로.
+            <span className="text-[#FEE500]">참치김밥</span>에 오신 것을 환영해요.
           </h1>
           <p className="text-sm text-indigo-100/90 leading-relaxed max-w-md">
-            외부 이메일이나 소셜 연동 없이, <strong>오직 이 사이트만을 위한 나만의 독립 계정</strong>을 만들어 커뮤니티에 입장하세요.
+            외부 이메일이나 소셜 연동 없이, <strong>오직 참치김밥만을 위한 나만의 독립 계정</strong>을 만들어 커뮤니티에 입장하세요.
           </p>
         </div>
 

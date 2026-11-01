@@ -9,7 +9,7 @@ export interface StoredUser extends UserProfile {
 export const cloudStore = {
   async loadUsers(): Promise<Record<string, StoredUser>> {
     try {
-      const res = await fetch(`${CLOUD_BASE}/kakaocord_users?_t=${Date.now()}`, {
+      const res = await fetch(`${CLOUD_BASE}/chamchi_users?_t=${Date.now()}`, {
         cache: "no-store",
       });
       if (!res.ok) return {};
@@ -39,14 +39,14 @@ export const cloudStore = {
       const newUser: StoredUser = {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         username: uname,
-        email: `${uname}@kakaocord.local`,
+        email: `${uname}@chamchi-gimbap.local`,
         password: userData.password,
         name: userData.name.trim() || uname,
         pronouns: userData.pronouns.trim() || "지정 안 됨",
         avatarUrl: userData.avatarUrl,
         bannerUrl: userData.bannerUrl,
         bannerColor: userData.bannerColor,
-        bio: userData.bio.trim() || "반갑습니다! 카카오코드 커뮤니티입니다 ✨",
+        bio: userData.bio.trim() || "반갑습니다! 참치김밥 커뮤니티입니다 🍙",
         statusMessage: userData.statusMessage.trim() || "온라인",
         status: "online",
         createdAt: new Date().toISOString().slice(0, 10),
@@ -55,7 +55,7 @@ export const cloudStore = {
 
       users[uname] = newUser;
 
-      await fetch(`${CLOUD_BASE}/kakaocord_users`, {
+      await fetch(`${CLOUD_BASE}/chamchi_users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(users),
@@ -95,7 +95,7 @@ export const cloudStore = {
       const uname = (user.username || "").toLowerCase();
       if (!uname || !users[uname]) return false;
       users[uname] = { ...users[uname], ...user };
-      await fetch(`${CLOUD_BASE}/kakaocord_users`, {
+      await fetch(`${CLOUD_BASE}/chamchi_users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(users),
@@ -108,7 +108,7 @@ export const cloudStore = {
 
   async loadCommunities(): Promise<Community[]> {
     try {
-      const res = await fetch(`${CLOUD_BASE}/kakaocord_communities?_t=${Date.now()}`, {
+      const res = await fetch(`${CLOUD_BASE}/chamchi_communities?_t=${Date.now()}`, {
         cache: "no-store",
       });
       if (!res.ok) return [];
@@ -150,7 +150,7 @@ export const cloudStore = {
       }
 
       const updated = [newComm, ...current];
-      await fetch(`${CLOUD_BASE}/kakaocord_communities`, {
+      await fetch(`${CLOUD_BASE}/chamchi_communities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
@@ -161,10 +161,36 @@ export const cloudStore = {
     }
   },
 
+  async deleteCommunity(communityId: string): Promise<Community[]> {
+    try {
+      const current = await this.loadCommunities();
+      const updated = current.filter((c) => c.id !== communityId);
+
+      // 1. Update communities in cloud DB
+      await fetch(`${CLOUD_BASE}/chamchi_communities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      });
+
+      // 2. Cascade delete messages for this community
+      await fetch(`${CLOUD_BASE}/chamchi_messages_${communityId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify([]),
+      });
+
+      return updated;
+    } catch (e) {
+      console.error("Failed to delete community in cloud:", e);
+      return [];
+    }
+  },
+
   async loadMessages(communityId: string): Promise<ChatMessage[]> {
     try {
       const res = await fetch(
-        `${CLOUD_BASE}/kakaocord_messages_${communityId}?_t=${Date.now()}`,
+        `${CLOUD_BASE}/chamchi_messages_${communityId}?_t=${Date.now()}`,
         { cache: "no-store" }
       );
       if (!res.ok) return [];
@@ -179,7 +205,7 @@ export const cloudStore = {
     try {
       const current = await this.loadMessages(communityId);
       const updated = [...current, newMsg];
-      await fetch(`${CLOUD_BASE}/kakaocord_messages_${communityId}`, {
+      await fetch(`${CLOUD_BASE}/chamchi_messages_${communityId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),
@@ -219,7 +245,7 @@ export const cloudStore = {
         return { ...msg, reactions };
       });
 
-      await fetch(`${CLOUD_BASE}/kakaocord_messages_${communityId}`, {
+      await fetch(`${CLOUD_BASE}/chamchi_messages_${communityId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updated),

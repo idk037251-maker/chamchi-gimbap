@@ -14,19 +14,19 @@ export interface GoogleUserPayload {
 export const DEFAULT_GOOGLE_CLIENT_ID =
   process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
   (typeof window !== "undefined"
-    ? localStorage.getItem("kakaocord_google_client_id") || ""
+    ? localStorage.getItem("chamchi_google_client_id") || ""
     : "");
 
 export function saveGoogleClientId(clientId: string) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("kakaocord_google_client_id", clientId.trim());
+  localStorage.setItem("chamchi_google_client_id", clientId.trim());
 }
 
 export function getGoogleClientId(): string {
   if (typeof window === "undefined") return "";
   return (
     process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-    localStorage.getItem("kakaocord_google_client_id") ||
+    localStorage.getItem("chamchi_google_client_id") ||
     ""
   );
 }

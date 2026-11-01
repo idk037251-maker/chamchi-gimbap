@@ -34,6 +34,7 @@ export interface Community {
   memberCount: number;
   onlineCount: number;
   createdBy: string;
+  createdById?: string;
   createdAt: string;
   tags: string[];
   channels: Channel[];

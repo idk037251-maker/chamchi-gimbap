@@ -4,7 +4,7 @@ export const AVATAR_PRESETS = [
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Mimi&backgroundColor=c0aede",
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Jack&backgroundColor=d1d4f9",
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Nala&backgroundColor=ffd5dc",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=Kakaocord&backgroundColor=fee500",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=ChamchiGimbap&backgroundColor=fee500",
   "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Ryan&backgroundColor=fada0a",
   "https://api.dicebear.com/7.x/lorelei/svg?seed=Luna&backgroundColor=b6e3f4",
 ];

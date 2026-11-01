@@ -25,8 +25,8 @@ export function getSupabaseConfig(): SupabaseConfig | null {
 
   if (typeof window === "undefined") return null;
 
-  const storedUrl = localStorage.getItem("kakaocord_supabase_url");
-  const storedKey = localStorage.getItem("kakaocord_supabase_anon_key");
+  const storedUrl = localStorage.getItem("chamchi_supabase_url");
+  const storedKey = localStorage.getItem("chamchi_supabase_anon_key");
   if (storedUrl && storedKey) {
     return { url: storedUrl.replace(/\/$/, ""), anonKey: storedKey };
   }
@@ -35,14 +35,14 @@ export function getSupabaseConfig(): SupabaseConfig | null {
 
 export function saveSupabaseConfig(url: string, anonKey: string) {
   if (typeof window === "undefined") return;
-  localStorage.setItem("kakaocord_supabase_url", url.trim());
-  localStorage.setItem("kakaocord_supabase_anon_key", anonKey.trim());
+  localStorage.setItem("chamchi_supabase_url", url.trim());
+  localStorage.setItem("chamchi_supabase_anon_key", anonKey.trim());
 }
 
 export function clearSupabaseConfig() {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("kakaocord_supabase_url");
-  localStorage.removeItem("kakaocord_supabase_anon_key");
+  localStorage.removeItem("chamchi_supabase_url");
+  localStorage.removeItem("chamchi_supabase_anon_key");
 }
 
 export class SupabaseBridge {
@@ -275,7 +275,7 @@ export class SupabaseBridge {
       socket.onopen = () => {
         socket.send(
           JSON.stringify({
-            topic: "realtime:kakaocord",
+            topic: "realtime:chamchi",
             event: "phx_join",
             payload: {
               config: {

@@ -68,6 +68,7 @@ interface AppContextType {
   joinedCommunityIds: string[];
   joinCommunity: (communityId: string) => void;
   createCommunity: (data: NewCommunityInput) => Promise<Community>;
+  deleteCommunity: (communityId: string) => Promise<boolean>;
   messages: ChatMessage[];
   sendMessage: (content: string, attachmentUrl?: string) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => void;
@@ -76,11 +77,11 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  USER: "kakaocord_site_user_v3",
-  COMMUNITIES: "kakaocord_communities_v3",
-  MESSAGES: "kakaocord_messages_v3",
-  JOINED: "kakaocord_joined_v3",
-  THEME: "kakaocord_theme_v3",
+  USER: "chamchi_site_user_v1",
+  COMMUNITIES: "chamchi_communities_v1",
+  MESSAGES: "chamchi_messages_v1",
+  JOINED: "chamchi_joined_v1",
+  THEME: "chamchi_theme_v1",
 };
 
 const formatKoreanTime = (dateObj = new Date()) => {
@@ -140,12 +141,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Initialize BroadcastChannel for cross-tab sync
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-      const bc = new BroadcastChannel("kakaocord_sync_channel");
+      const bc = new BroadcastChannel("chamchi_sync_channel");
       broadcastRef.current = bc;
       bc.onmessage = (event) => {
         const { type, payload } = event.data || {};
         if (type === "NEW_COMMUNITY") {
           setCommunities((prev) => (prev.some((c) => c.id === payload.id) ? prev : [payload, ...prev]));
+        } else if (type === "COMMUNITY_DELETED") {
+          setCommunities((prev) => prev.filter((c) => c.id !== payload));
+          if (activeCommunityIdRef.current === payload) {
+            setActiveCommunityId(null);
+          }
         } else if (type === "NEW_MESSAGE") {
           if (activeCommunityIdRef.current === payload.communityId) {
             setMessages((prev) => (prev.some((m) => m.id === payload.id) ? prev : [...prev, payload]));
@@ -337,6 +343,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         memberCount: 1,
         onlineCount: 1,
         createdBy: currentUser?.name || "방장",
+        createdById: currentUser?.id,
         createdAt: new Date().toISOString().slice(0, 10),
         tags: data.tags || [],
         channels: [{ id: "general", name: "자유-대화방", type: "text", description: "메인 대화 채널" }],
@@ -438,6 +445,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await cloudStore.toggleReaction(activeCommunityId, messageId, emoji, currentUser.id);
   };
 
+  const deleteCommunity = async (communityId: string): Promise<boolean> => {
+    // 1. Optimistic removal from state
+    setCommunities((prev) => prev.filter((c) => c.id !== communityId));
+    setJoinedCommunityIds((prev) => {
+      const next = prev.filter((id) => id !== communityId);
+      saveLocal(STORAGE_KEYS.JOINED, next);
+      return next;
+    });
+
+    if (activeCommunityIdRef.current === communityId) {
+      setActiveCommunityId(null);
+    }
+
+    // 2. Broadcast across tabs
+    try {
+      broadcastRef.current?.postMessage({ type: "COMMUNITY_DELETED", payload: communityId });
+    } catch {}
+
+    // 3. Cascade delete in Cloud DB
+    await cloudStore.deleteCommunity(communityId);
+    return true;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -473,6 +503,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         joinedCommunityIds,
         joinCommunity,
         createCommunity,
+        deleteCommunity,
         messages,
         sendMessage,
         toggleReaction,

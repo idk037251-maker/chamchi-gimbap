@@ -1,6 +1,7 @@
 {
-  "name": "kakaocord-chat",
+  "name": "chamchi-gimbap",
   "version": "1.0.0",
+  "description": "참치김밥 — 실시간 커뮤니티 채팅 웹 애플리케이션",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3005",

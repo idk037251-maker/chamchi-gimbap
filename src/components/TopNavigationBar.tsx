@@ -58,13 +58,13 @@ export default function TopNavigationBar() {
           onClick={() => setActiveCommunityId(null)}
           className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-[#2b2d31] transition"
         >
-          <div className="w-8 h-8 rounded-xl bg-[#5865F2] flex items-center justify-center text-white shadow-xs">
-            <MessageSquareHeart className="w-4 h-4" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#5865F2] to-indigo-500 flex items-center justify-center text-white shadow-xs text-base">
+            🍙
           </div>
           <div className="text-left hidden sm:block">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">
-                KakaoCord
+                참치김밥
               </span>
               <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
                 LIVE

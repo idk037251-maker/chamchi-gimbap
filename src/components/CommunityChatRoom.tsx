@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   X,
   Loader2,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function CommunityChatRoom() {
@@ -28,12 +30,15 @@ export default function CommunityChatRoom() {
     messages,
     sendMessage,
     toggleReaction,
+    deleteCommunity,
     currentUser,
   } = useApp();
 
   const [inputText, setInputText] = useState("");
   const [showRulesPanel, setShowRulesPanel] = useState(true);
   const [showMembersSidebar, setShowMembersSidebar] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [inspectedUser, setInspectedUser] = useState<{
     name: string;
     pronouns: string;
@@ -74,6 +79,25 @@ export default function CommunityChatRoom() {
       </div>
     );
   }
+
+  const isOwner =
+    !!currentUser &&
+    (community.createdById === currentUser.id ||
+      community.createdBy === currentUser.name ||
+      (!!currentUser.username && community.createdBy === currentUser.username));
+
+  const handleDeleteCommunity = async () => {
+    if (!isOwner || isDeleting) return;
+    try {
+      setIsDeleting(true);
+      await deleteCommunity(community.id);
+    } catch (err) {
+      console.error("Failed to delete community", err);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,6 +228,19 @@ export default function CommunityChatRoom() {
             >
               <Users className="w-4 h-4" />
             </button>
+
+            {/* Owner-only Delete Community Button */}
+            {isOwner && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/30 transition shadow-xs"
+                title="방장 전용: 커뮤니티와 모든 대화 내용을 영구 삭제합니다."
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">커뮤니티 삭제</span>
+              </button>
+            )}
           </div>
         </header>
 
@@ -426,6 +463,62 @@ export default function CommunityChatRoom() {
                   {inspectedUser.role}
                 </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal (Owner Only) */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-[#2b2d31] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 space-y-4">
+            <div className="flex items-center gap-3 text-rose-500">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
+                  커뮤니티 영구 삭제
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  방장({currentUser.name}) 전용 관리 기능
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-700 dark:text-rose-300 leading-relaxed font-medium">
+              ⚠️ <strong>정말 삭제하시겠습니까?</strong>
+              <br />
+              커뮤니티 정보와 그 안에서 오간 <strong>모든 채팅 내역(대화 데이터)이 영구적으로 사라지며</strong> 복구할 수 없습니다.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1e1f22] transition disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteCommunity}
+                className="px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow-md transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>삭제 처리 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>영구 삭제 승인</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

@@ -3,8 +3,8 @@ const isGithubPages = process.env.DEPLOY_TARGET === "gh-pages";
 
 const nextConfig = {
   output: "export",
-  basePath: isGithubPages ? "/kakaocord-live" : "",
-  assetPrefix: isGithubPages ? "/kakaocord-live/" : undefined,
+  basePath: isGithubPages ? "/chamchi-gimbap" : "",
+  assetPrefix: isGithubPages ? "/chamchi-gimbap/" : undefined,
   images: {
     unoptimized: true,
   },
