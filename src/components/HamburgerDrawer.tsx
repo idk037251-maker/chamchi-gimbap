@@ -41,6 +41,8 @@ export default function HamburgerDrawer() {
     joinCommunity,
     getCommunityUnreadCount,
     totalCommunityUnreadCount,
+    followCounts,
+    openFollowListModal,
     theme,
     toggleTheme,
     logout,
@@ -164,6 +166,38 @@ export default function HamburgerDrawer() {
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                 @{currentUser.username || currentUser.name}
               </p>
+
+              {/* Follower / Following Quick Access */}
+              <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    openFollowListModal("followers", currentUser);
+                  }}
+                  className="hover:text-[#5865F2] dark:hover:text-[#FEE500] hover:underline transition cursor-pointer"
+                  title="내 팔로워 명단 보기"
+                >
+                  <strong className="text-slate-900 dark:text-white font-extrabold">
+                    {followCounts[currentUser.id]?.followers || 0}
+                  </strong>{" "}
+                  팔로워
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    openFollowListModal("following", currentUser);
+                  }}
+                  className="hover:text-[#5865F2] dark:hover:text-[#FEE500] hover:underline transition cursor-pointer"
+                  title="내 팔로잉 명단 보기"
+                >
+                  <strong className="text-slate-900 dark:text-white font-extrabold">
+                    {followCounts[currentUser.id]?.following || 0}
+                  </strong>{" "}
+                  팔로잉
+                </button>
+              </div>
 
               {/* View My Profile & Feed Button */}
               <button

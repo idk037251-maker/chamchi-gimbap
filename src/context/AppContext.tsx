@@ -124,6 +124,16 @@ interface AppContextType {
   followingIds: string[];
   followCounts: Record<string, { followers: number; following: number }>;
   toggleFollowUser: (targetUserId: string) => Promise<boolean>;
+  refreshFollowCounts: (userId: string) => Promise<{ followers: number; following: number }>;
+  followModalState: {
+    isOpen: boolean;
+    type: "followers" | "following";
+    targetUser: UserProfile | null;
+  };
+  openFollowListModal: (type: "followers" | "following", targetUser?: UserProfile) => void;
+  closeFollowListModal: () => void;
+  getFollowersList: (userId: string) => Promise<UserProfile[]>;
+  getFollowingList: (userId: string) => Promise<UserProfile[]>;
 
   // Posts & Feed
   userPosts: Post[];
@@ -225,6 +235,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [inspectedUser, setInspectedUser] = useState<UserProfile | null>(null);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [followCounts, setFollowCounts] = useState<Record<string, { followers: number; following: number }>>({});
+  const [followModalState, setFollowModalState] = useState<{
+    isOpen: boolean;
+    type: "followers" | "following";
+    targetUser: UserProfile | null;
+  }>({
+    isOpen: false,
+    type: "followers",
+    targetUser: null,
+  });
 
   // Posts Feed states
   const [userPosts, setUserPosts] = useState<Post[]>([]);
@@ -423,6 +442,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             });
             alert("👑 관리자에 의해 계정 활동 정지가 해제되었습니다.");
           }
+        } else if (type === "FOLLOW_TOGGLED") {
+          const { followerId, followingId } = payload || {};
+          if (followerId) cloudStore.getFollowCounts(followerId).then((c) => setFollowCounts((prev) => ({ ...prev, [followerId]: c })));
+          if (followingId) cloudStore.getFollowCounts(followingId).then((c) => setFollowCounts((prev) => ({ ...prev, [followingId]: c })));
         }
       };
     }
@@ -1286,12 +1309,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
+    const myCounts = await cloudStore.getFollowCounts(currentUser.id);
     setFollowCounts((prev) => ({
       ...prev,
+      [currentUser.id]: { followers: myCounts.followers, following: myCounts.following },
       [targetUserId]: { followers: res.followersCount, following: res.followingCount },
     }));
+
+    try {
+      broadcastRef.current?.postMessage({
+        type: "FOLLOW_TOGGLED",
+        payload: { followerId: currentUser.id, followingId: targetUserId },
+      });
+    } catch {}
+
     return isNowFollowing;
   };
+
+  const refreshFollowCounts = useCallback(async (userId: string) => {
+    try {
+      const counts = await cloudStore.getFollowCounts(userId, currentUserRef.current?.id);
+      setFollowCounts((prev) => ({
+        ...prev,
+        [userId]: { followers: counts.followers, following: counts.following },
+      }));
+      return counts;
+    } catch {
+      return { followers: 0, following: 0, isFollowing: false };
+    }
+  }, []);
+
+  const openFollowListModal = useCallback((type: "followers" | "following", targetUser?: UserProfile) => {
+    const userToUse = targetUser || inspectedUser || currentUserRef.current;
+    if (!userToUse) return;
+    setFollowModalState({
+      isOpen: true,
+      type,
+      targetUser: userToUse,
+    });
+  }, [inspectedUser]);
+
+  const closeFollowListModal = useCallback(() => {
+    setFollowModalState((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
+  const getFollowersList = useCallback(async (userId: string): Promise<UserProfile[]> => {
+    return cloudStore.getFollowers(userId);
+  }, []);
+
+  const getFollowingList = useCallback(async (userId: string): Promise<UserProfile[]> => {
+    return cloudStore.getFollowing(userId);
+  }, []);
 
   // Posts Feed
   const loadUserPosts = async (authorId?: string): Promise<Post[]> => {
@@ -1671,6 +1739,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         followingIds,
         followCounts,
         toggleFollowUser,
+        refreshFollowCounts,
+        followModalState,
+        openFollowListModal,
+        closeFollowListModal,
+        getFollowersList,
+        getFollowingList,
         userPosts,
         loadUserPosts,
         createPost,

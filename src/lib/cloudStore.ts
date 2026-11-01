@@ -1227,6 +1227,83 @@ export const cloudStore = {
     return { followers, following, isFollowing };
   },
 
+  async getFollowers(userId: string): Promise<UserProfile[]> {
+    const all = await this.loadFollows();
+    const followerIds = all.filter((f) => f.followingId === userId).map((f) => f.followerId);
+    return this.getUsersByIds(followerIds);
+  },
+
+  async getFollowing(userId: string): Promise<UserProfile[]> {
+    const all = await this.loadFollows();
+    const followingIds = all.filter((f) => f.followerId === userId).map((f) => f.followingId);
+    return this.getUsersByIds(followingIds);
+  },
+
+  async getUsersByIds(userIds: string[]): Promise<UserProfile[]> {
+    if (!userIds || userIds.length === 0) return [];
+    const allUsers = await this.loadUsers();
+    const comms = await this.loadCommunities();
+    const result: UserProfile[] = [];
+    const seen = new Set<string>();
+
+    for (const rawId of userIds) {
+      if (!rawId || seen.has(rawId)) continue;
+      seen.add(rawId);
+
+      const fromDir = Object.values(allUsers).find(
+        (u) => u.id === rawId || u.username?.toLowerCase() === rawId.toLowerCase()
+      );
+      if (fromDir) {
+        result.push(fromDir);
+        continue;
+      }
+
+      let fromComm: UserProfile | null = null;
+      for (const c of comms) {
+        const m = (c.members || []).find((mem) => mem.userId === rawId || mem.username === rawId);
+        if (m) {
+          fromComm = {
+            id: m.userId,
+            username: m.username || m.name,
+            name: m.name,
+            pronouns: m.pronouns || "지정 안 됨",
+            avatarUrl: m.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(m.name)}`,
+            bannerUrl: "",
+            bannerColor: "linear-gradient(135deg, #5865F2 0%, #1e1f22 100%)",
+            bio: "",
+            statusMessage: "",
+            status: "online",
+            createdAt: m.joinedAt,
+            authProvider: "site",
+          };
+          break;
+        }
+      }
+
+      if (fromComm) {
+        result.push(fromComm);
+        continue;
+      }
+
+      result.push({
+        id: rawId,
+        username: rawId,
+        name: rawId,
+        pronouns: "지정 안 됨",
+        avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(rawId)}`,
+        bannerUrl: "",
+        bannerColor: "linear-gradient(135deg, #5865F2 0%, #1e1f22 100%)",
+        bio: "",
+        statusMessage: "",
+        status: "online",
+        createdAt: new Date().toISOString(),
+        authProvider: "site",
+      });
+    }
+
+    return result;
+  },
+
   // ------------------------------------------------------------- 1:1 Direct Messages (DM)
   getDmConversationId(user1Id: string, user2Id: string): string {
     return [user1Id, user2Id].sort().join("__");

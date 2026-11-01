@@ -17,6 +17,7 @@ import SupabaseCloudModal from "@/components/SupabaseCloudModal";
 import SupportInquiryModal from "@/components/SupportInquiryModal";
 import ReportMessageModal from "@/components/ReportMessageModal";
 import AdminBanModal from "@/components/AdminBanModal";
+import FollowListModal from "@/components/FollowListModal";
 import { ShieldAlert } from "lucide-react";
 
 export default function HomePage() {
@@ -80,6 +81,7 @@ export default function HomePage() {
       <SupportInquiryModal />
       <ReportMessageModal />
       <AdminBanModal />
+      <FollowListModal />
     </div>
   );
 }

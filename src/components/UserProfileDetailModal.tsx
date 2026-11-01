@@ -40,6 +40,8 @@ export default function UserProfileDetailModal() {
     uploadMediaFile,
     setAdminBanningUser,
     adminUnbanUser,
+    openFollowListModal,
+    refreshFollowCounts,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<"posts" | "info">("posts");
@@ -56,8 +58,9 @@ export default function UserProfileDetailModal() {
   useEffect(() => {
     if (inspectedUser) {
       loadUserPosts(inspectedUser.id);
+      refreshFollowCounts(inspectedUser.id);
     }
-  }, [inspectedUser?.id]);
+  }, [inspectedUser?.id, refreshFollowCounts]);
 
   if (!inspectedUser || !currentUser) return null;
 
@@ -315,24 +318,42 @@ export default function UserProfileDetailModal() {
           )}
 
           {/* Follow Stats */}
-          <div className="flex items-center gap-4 mt-3 text-xs text-slate-500 dark:text-slate-400">
-            <div>
-              <strong className="text-slate-900 dark:text-white font-extrabold">
+          <div className="flex items-center gap-2 sm:gap-3 mt-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+            <button
+              type="button"
+              onClick={() => openFollowListModal("followers", inspectedUser)}
+              className="group/stat flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 dark:bg-[#1e1f22] hover:bg-[#5865F2]/10 dark:hover:bg-[#5865F2]/20 border border-slate-200/60 dark:border-white/5 hover:border-[#5865F2]/30 transition-all cursor-pointer shadow-2xs"
+              title="클릭하여 팔로워 명단 보기"
+            >
+              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500] group-hover/stat:underline">
                 {counts.followers || 0}
-              </strong>{" "}
-              팔로워
-            </div>
-            <div>
-              <strong className="text-slate-900 dark:text-white font-extrabold">
+              </strong>
+              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500]">
+                팔로워
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => openFollowListModal("following", inspectedUser)}
+              className="group/stat flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 dark:bg-[#1e1f22] hover:bg-[#5865F2]/10 dark:hover:bg-[#5865F2]/20 border border-slate-200/60 dark:border-white/5 hover:border-[#5865F2]/30 transition-all cursor-pointer shadow-2xs"
+              title="클릭하여 팔로잉 명단 보기"
+            >
+              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500] group-hover/stat:underline">
                 {counts.following || 0}
-              </strong>{" "}
-              팔로잉
-            </div>
-            <div>
-              <strong className="text-slate-900 dark:text-white font-extrabold">
+              </strong>
+              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500]">
+                팔로잉
+              </span>
+            </button>
+
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 dark:bg-[#1e1f22] border border-slate-200/60 dark:border-white/5">
+              <strong className="text-slate-900 dark:text-white font-black">
                 {posts.length}
-              </strong>{" "}
-              게시글
+              </strong>
+              <span className="font-semibold text-slate-600 dark:text-slate-300">
+                게시글
+              </span>
             </div>
           </div>
         </div>
