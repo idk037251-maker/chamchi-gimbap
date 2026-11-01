@@ -7,6 +7,8 @@ import {
   FollowRecord,
   DmMessage,
   DmConversation,
+  SupportInquiry,
+  ReportRecord,
 } from "@/types/chat";
 import { getSupabaseConfig, SupabaseConfig } from "./supabaseClient";
 import { deduplicateCommunities } from "./communityUtils";
@@ -183,6 +185,8 @@ export const cloudStore = {
                 status: (r.status as any) || "online",
                 createdAt: r.created_at ? r.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
                 authProvider: "site",
+                bannedUntil: r.banned_until || undefined,
+                banReason: r.ban_reason || undefined,
               };
             }
           });
@@ -241,6 +245,8 @@ export const cloudStore = {
               status: (r.status as any) || "online",
               createdAt: r.created_at ? r.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
               authProvider: "site",
+              bannedUntil: r.banned_until || undefined,
+              banReason: r.ban_reason || undefined,
             };
             setLocalCache(CACHE_KEYS.USER_VAULT_PREFIX + key, user);
             return user;
@@ -294,6 +300,8 @@ export const cloudStore = {
             bio: user.bio,
             status_message: user.statusMessage,
             status: user.status,
+            banned_until: user.bannedUntil || null,
+            ban_reason: user.banReason || null,
             updated_at: new Date().toISOString(),
           }),
         });
@@ -1413,5 +1421,249 @@ export const cloudStore = {
     } catch {
       return null;
     }
+  },
+
+  async loadUsersDirectory(): Promise<Record<string, StoredUser>> {
+    return this.loadUsers();
+  },
+
+  async banUser(targetUserId: string, durationDays: number, reason: string): Promise<UserProfile | null> {
+    const durationMs = durationDays * 24 * 60 * 60 * 1000;
+    return this.adminCustomBanUser(targetUserId, durationMs, reason);
+  },
+
+  async adminCustomBanUser(targetUserId: string, durationMs: number, reason: string): Promise<UserProfile | null> {
+    const bannedUntil = new Date(Date.now() + durationMs).toISOString();
+    const allUsers = await this.loadUsersDirectory();
+    let targetKey = "";
+    let foundUser: StoredUser | null = null;
+
+    for (const [key, u] of Object.entries(allUsers)) {
+      if (u.id === targetUserId || u.username.toLowerCase() === targetUserId.toLowerCase()) {
+        targetKey = key;
+        foundUser = u;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      foundUser = await this.loadSingleUser(targetUserId);
+      if (foundUser) targetKey = foundUser.username.toLowerCase();
+    }
+
+    if (foundUser && targetKey) {
+      foundUser.bannedUntil = bannedUntil;
+      foundUser.banReason = reason;
+      await this.saveSingleUser(targetKey, foundUser);
+      allUsers[targetKey] = foundUser;
+      setLocalCache(CACHE_KEYS.USERS_DIRECTORY, allUsers);
+    }
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+          method: "PATCH",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            banned_until: bannedUntil,
+            ban_reason: reason,
+          }),
+        });
+      } catch (e) {
+        console.warn("Supabase banUser patch error", e);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const cur = localStorage.getItem("chamchi_site_user_v1");
+        if (cur) {
+          const parsed = JSON.parse(cur);
+          if (parsed.id === targetUserId || parsed.username?.toLowerCase() === targetUserId.toLowerCase()) {
+            parsed.bannedUntil = bannedUntil;
+            parsed.banReason = reason;
+            localStorage.setItem("chamchi_site_user_v1", JSON.stringify(parsed));
+          }
+        }
+      } catch {}
+    }
+
+    return foundUser;
+  },
+
+  async unbanUser(targetUserId: string): Promise<UserProfile | null> {
+    const allUsers = await this.loadUsersDirectory();
+    let targetKey = "";
+    let foundUser: StoredUser | null = null;
+
+    for (const [key, u] of Object.entries(allUsers)) {
+      if (u.id === targetUserId || u.username.toLowerCase() === targetUserId.toLowerCase()) {
+        targetKey = key;
+        foundUser = u;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      foundUser = await this.loadSingleUser(targetUserId);
+      if (foundUser) targetKey = foundUser.username.toLowerCase();
+    }
+
+    if (foundUser && targetKey) {
+      delete foundUser.bannedUntil;
+      delete foundUser.banReason;
+      await this.saveSingleUser(targetKey, foundUser);
+      allUsers[targetKey] = foundUser;
+      setLocalCache(CACHE_KEYS.USERS_DIRECTORY, allUsers);
+    }
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/profiles?id=eq.${encodeURIComponent(targetUserId)}`, {
+          method: "PATCH",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            banned_until: null,
+            ban_reason: null,
+          }),
+        });
+      } catch (e) {
+        console.warn("Supabase unbanUser patch error", e);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const cur = localStorage.getItem("chamchi_site_user_v1");
+        if (cur) {
+          const parsed = JSON.parse(cur);
+          if (parsed.id === targetUserId || parsed.username?.toLowerCase() === targetUserId.toLowerCase()) {
+            delete parsed.bannedUntil;
+            delete parsed.banReason;
+            localStorage.setItem("chamchi_site_user_v1", JSON.stringify(parsed));
+          }
+        }
+      } catch {}
+    }
+
+    return foundUser;
+  },
+
+  async submitSupportInquiry(inquiry: SupportInquiry): Promise<boolean> {
+    const existing = getLocalCache<SupportInquiry[]>("chamchi_inquiries", []);
+    existing.unshift(inquiry);
+    setLocalCache("chamchi_inquiries", existing.slice(0, 100));
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/support_inquiries`, {
+          method: "POST",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            id: inquiry.id,
+            user_id: inquiry.userId,
+            user_name: inquiry.userName,
+            user_username: inquiry.userUsername,
+            category: inquiry.category,
+            title: inquiry.title,
+            content: inquiry.content,
+            status: inquiry.status,
+            created_at: inquiry.createdAt,
+          }),
+        });
+      } catch (e) {
+        console.warn("Supabase submitSupportInquiry error", e);
+      }
+    }
+
+    try {
+      await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_inquiries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existing.slice(0, 50)),
+      });
+    } catch {}
+
+    return true;
+  },
+
+  async submitReport(report: ReportRecord): Promise<boolean> {
+    const existing = getLocalCache<ReportRecord[]>("chamchi_reports", []);
+    existing.unshift(report);
+    setLocalCache("chamchi_reports", existing.slice(0, 100));
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        await fetch(`${cfg.url}/rest/v1/reports`, {
+          method: "POST",
+          headers: supabaseHeaders(cfg, { "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            id: report.id,
+            reporter_id: report.reporterId,
+            reporter_name: report.reporterName,
+            target_user_id: report.targetUserId,
+            target_user_name: report.targetUserName,
+            message_id: report.messageId,
+            message_content: report.messageContent,
+            community_id: report.communityId,
+            community_name: report.communityName,
+            reason: report.reason,
+            ai_verdict: report.aiVerdict,
+            status: report.status,
+            created_at: report.createdAt,
+          }),
+        });
+      } catch (e) {
+        console.warn("Supabase submitReport error", e);
+      }
+    }
+
+    try {
+      await fetch(`${CLOUD_FALLBACK_BASE}/chamchi_reports`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existing.slice(0, 50)),
+      });
+    } catch {}
+
+    return true;
+  },
+
+  async getCommunityMessageCounts(communities: Community[]): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+
+    for (const comm of communities) {
+      const msgs = getLocalCache<ChatMessage[]>(CACHE_KEYS.MESSAGES_PREFIX + comm.id, []);
+      counts[comm.id] = msgs.length;
+    }
+
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        const res = await fetch(`${cfg.url}/rest/v1/messages?select=community_id`, {
+          headers: supabaseHeaders(cfg),
+        });
+        if (res.ok) {
+          const rows: { community_id: string }[] = await res.json();
+          const supabaseCounts: Record<string, number> = {};
+          rows.forEach((r) => {
+            if (r.community_id) {
+              supabaseCounts[r.community_id] = (supabaseCounts[r.community_id] || 0) + 1;
+            }
+          });
+          for (const comm of communities) {
+            counts[comm.id] = Math.max(counts[comm.id] || 0, supabaseCounts[comm.id] || 0);
+          }
+        }
+      } catch (e) {
+        console.warn("Supabase message count fetch error", e);
+      }
+    }
+
+    return counts;
   },
 };

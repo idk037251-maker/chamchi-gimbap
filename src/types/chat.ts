@@ -16,6 +16,8 @@ export interface UserProfile {
   authProvider: "site" | "email" | "google" | "kakao";
   followersCount?: number;
   followingCount?: number;
+  bannedUntil?: string; // ISO 8601 string for account activity suspension
+  banReason?: string; // Reason for punishment
 }
 
 export interface Channel {
@@ -151,4 +153,63 @@ export function isSuperAdmin(user?: UserProfile | null): boolean {
   const uname = (user.username || "").trim().toLowerCase();
   const name = (user.name || "").trim().toLowerCase();
   return uname === "참치김밥" || name === "참치김밥";
+}
+
+export function isUserBanned(user?: UserProfile | null): boolean {
+  if (!user) return false;
+  if (isSuperAdmin(user)) return false; // Super admin cannot be banned
+  if (!user.bannedUntil) return false;
+  return new Date(user.bannedUntil).getTime() > Date.now();
+}
+
+export function formatBanExpiry(bannedUntil?: string): string {
+  if (!bannedUntil) return "";
+  const d = new Date(bannedUntil);
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+export interface SupportInquiry {
+  id: string;
+  userId: string;
+  userName: string;
+  userUsername?: string;
+  category: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  status: "pending" | "resolved";
+}
+
+export interface AiVerdict {
+  isViolation: boolean;
+  severity: 1 | 2 | 3;
+  severityLabel: string;
+  bannedDays: number;
+  reason: string;
+  detectedKeywords: string[];
+  explanation: string;
+}
+
+export interface ReportRecord {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  targetUserId: string;
+  targetUserName: string;
+  messageId?: string;
+  messageContent?: string;
+  communityId?: string;
+  communityName?: string;
+  reason: string;
+  aiVerdict?: AiVerdict;
+  createdAt: string;
+  status: "auto_actioned" | "pending" | "dismissed";
+}
+
+export interface PresencePing {
+  communityId: string;
+  userId: string;
+  userName: string;
+  avatarUrl: string;
+  timestamp: number;
 }

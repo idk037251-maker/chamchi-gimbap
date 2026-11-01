@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { compressImage } from "@/lib/imageUtils";
 import { isSuperAdmin } from "@/types/chat";
+import { cloudStore } from "@/lib/cloudStore";
 import {
   Megaphone,
   ShieldAlert,
@@ -22,6 +23,7 @@ import {
   Crown,
   Image as ImageIcon,
   Smile,
+  Flag,
 } from "lucide-react";
 
 const EMOJIS = [
@@ -51,6 +53,10 @@ export default function CommunityChatRoom() {
     deleteCommunity,
     kickMember,
     currentUser,
+    getCommunityActiveCount,
+    communityActivePresences,
+    setReportingMessage,
+    setAdminBanningUser,
   } = useApp();
 
   const [inputText, setInputText] = useState("");
@@ -304,7 +310,13 @@ export default function CommunityChatRoom() {
             <span className="text-xl">{community.iconEmoji}</span>
             <div className="min-w-0">
               <h2 className="font-extrabold text-sm sm:text-base truncate">{community.name}</h2>
-              <p className="text-[11px] text-slate-400 truncate">#{activeChannel?.name}</p>
+              <div className="flex items-center gap-2 text-[11px] truncate">
+                <span className="text-slate-400">#{activeChannel?.name}</span>
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>{getCommunityActiveCount(community.id)}/{displayMembers.length}명 실시간 접속 중</span>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -498,6 +510,18 @@ export default function CommunityChatRoom() {
                           title={iAmAdmin && !isMe ? "최고 관리자 권한으로 삭제" : "메시지 삭제"}
                         >
                           <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+
+                      {/* Report button for other members' messages */}
+                      {!isMe && !isSenderAdmin && !msg.isSystem && (
+                        <button
+                          type="button"
+                          onClick={() => setReportingMessage(msg)}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition"
+                          title="이 메시지 신고하기 (AI 자동 심사 및 이용 제한)"
+                        >
+                          <Flag className="w-3 h-3" />
                         </button>
                       )}
                     </div>
@@ -705,6 +729,8 @@ export default function CommunityChatRoom() {
                 member.role === "방장" &&
                 (member.name.trim().toLowerCase() === "참치김밥" ||
                   (member.username && member.username.trim().toLowerCase() === "참치김밥"));
+              const isMemberOnline =
+                isMe || (communityActivePresences[community.id] || []).includes(member.userId);
 
               return (
                 <div
@@ -720,11 +746,19 @@ export default function CommunityChatRoom() {
                     onClick={() => inspectUser(member.userId)}
                     className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
                   >
-                    <img
-                      src={member.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(member.name)}`}
-                      alt={member.name}
-                      className="w-8 h-8 rounded-xl object-cover bg-slate-700 shrink-0"
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={member.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(member.name)}`}
+                        alt={member.name}
+                        className="w-8 h-8 rounded-xl object-cover bg-slate-700 shrink-0"
+                      />
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#2b2d31] ${
+                          isMemberOnline ? "bg-emerald-500" : "bg-slate-400"
+                        }`}
+                        title={isMemberOnline ? "현재 온라인" : "오프라인"}
+                      />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <p className="font-bold text-xs truncate text-slate-900 dark:text-slate-100">
@@ -752,18 +786,51 @@ export default function CommunityChatRoom() {
                     </div>
                   </button>
 
-                  {/* Owner or Super Admin kick button */}
-                  {(isOwner || iAmAdmin) && !isMe && !isMemberOwner && (
-                    <button
-                      type="button"
-                      onClick={() => setKickTarget({ userId: member.userId, name: member.name })}
-                      className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 text-[11px] font-bold flex items-center gap-1 transition shrink-0"
-                      title={iAmAdmin && !isOwner ? "최고 관리자 전용 강퇴" : "방장 전용: 해당 사용자를 커뮤니티에서 내보냅니다."}
-                    >
-                      <UserX className="w-3 h-3" />
-                      <span>강퇴</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {/* Super Admin Ban Button */}
+                    {iAmAdmin && !isMe && !isMemberAdmin && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const full = await cloudStore.loadSingleUser(member.username || member.name);
+                          setAdminBanningUser(
+                            full || {
+                              id: member.userId,
+                              username: member.username || member.name,
+                              name: member.name,
+                              pronouns: member.pronouns,
+                              avatarUrl: member.avatarUrl,
+                              bannerUrl: "",
+                              bannerColor: "",
+                              bio: "",
+                              statusMessage: "",
+                              status: "online",
+                              createdAt: member.joinedAt,
+                              authProvider: "site",
+                            }
+                          );
+                        }}
+                        className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-700 dark:text-amber-400 hover:text-slate-950 border border-amber-500/30 text-[11px] font-black flex items-center gap-1 transition shrink-0"
+                        title="최고 관리자 전용: 맞춤형 제재 및 차단"
+                      >
+                        <ShieldAlert className="w-3 h-3" />
+                        <span>제재</span>
+                      </button>
+                    )}
+
+                    {/* Owner or Super Admin kick button */}
+                    {(isOwner || iAmAdmin) && !isMe && !isMemberOwner && (
+                      <button
+                        type="button"
+                        onClick={() => setKickTarget({ userId: member.userId, name: member.name })}
+                        className="px-2 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 text-[11px] font-bold flex items-center gap-1 transition shrink-0"
+                        title={iAmAdmin && !isOwner ? "최고 관리자 전용 강퇴" : "방장 전용: 해당 사용자를 커뮤니티에서 내보냅니다."}
+                      >
+                        <UserX className="w-3 h-3" />
+                        <span>강퇴</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

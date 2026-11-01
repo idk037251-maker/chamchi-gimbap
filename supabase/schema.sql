@@ -166,3 +166,43 @@ ALTER TABLE public.community_reads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Reads Select" ON public.community_reads FOR SELECT USING (true);
 CREATE POLICY "Public Reads Insert" ON public.community_reads FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public Reads Update" ON public.community_reads FOR UPDATE USING (true);
+
+-- 11. 사용자 제재 컬럼 추가 (무중단 마이그레이션 - 기존 데이터 100% 보존)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS banned_until TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS ban_reason TEXT;
+
+-- 12. 비공개 문의 및 신고 테이블
+CREATE TABLE IF NOT EXISTS public.support_inquiries (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  user_username TEXT,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.support_inquiries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Inquiries Insert" ON public.support_inquiries FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Inquiries Select" ON public.support_inquiries FOR SELECT USING (true);
+
+-- 13. AI 유저 신고 및 제재 이력 테이블
+CREATE TABLE IF NOT EXISTS public.reports (
+  id TEXT PRIMARY KEY,
+  reporter_id TEXT NOT NULL,
+  reporter_name TEXT NOT NULL,
+  target_user_id TEXT NOT NULL,
+  target_user_name TEXT NOT NULL,
+  message_id TEXT,
+  message_content TEXT,
+  community_id TEXT,
+  community_name TEXT,
+  reason TEXT NOT NULL,
+  ai_verdict JSONB,
+  status TEXT DEFAULT 'auto_actioned',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Reports Insert" ON public.reports FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Reports Select" ON public.reports FOR SELECT USING (true);

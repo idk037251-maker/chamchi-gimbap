@@ -3,7 +3,7 @@
 import React from "react";
 import { useApp } from "@/context/AppContext";
 import { deduplicateCommunities } from "@/lib/communityUtils";
-import { isSuperAdmin } from "@/types/chat";
+import { isSuperAdmin, isUserBanned, formatBanExpiry } from "@/types/chat";
 import {
   X,
   PlusCircle,
@@ -17,6 +17,8 @@ import {
   Database,
   MessageSquareHeart,
   User,
+  HelpCircle,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function HamburgerDrawer() {
@@ -27,6 +29,7 @@ export default function HamburgerDrawer() {
     setIsCreateModalOpen,
     setIsProfileModalOpen,
     setIsCloudConfigModalOpen,
+    setIsSupportModalOpen,
     isCloudConnected,
     communities,
     joinedCommunityIds,
@@ -174,11 +177,27 @@ export default function HamburgerDrawer() {
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>내 프로필 및 피드(사진/글) 보기</span>
               </button>
+
+              {/* Banned Alert Banner */}
+              {isUserBanned(currentUser) && (
+                <div className="mt-2.5 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-semibold space-y-0.5">
+                  <p className="font-extrabold flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
+                    <span>계정 활동 제한 적용 중</span>
+                  </p>
+                  <p className="text-[11px] opacity-90">
+                    만료: {formatBanExpiry(currentUser.bannedUntil)}
+                  </p>
+                  <p className="text-[10px] opacity-80">
+                    사유: {currentUser.banReason || "운영 원칙 위반"}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 2. Primary Actions: '커뮤니티 만들기' & '1:1 DM' & '클라우드 DB' */}
+        {/* 2. Primary Actions: '커뮤니티 만들기' & '1:1 DM' & '클라우드 DB' & '문의하기' */}
         <div className="px-4 pb-3 space-y-2">
           <button
             onClick={() => {
@@ -189,6 +208,22 @@ export default function HamburgerDrawer() {
           >
             <PlusCircle className="w-4 h-4 text-[#FEE500]" />
             <span>+ 커뮤니티 만들기</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setIsDrawerOpen(false);
+              setIsSupportModalOpen(true);
+            }}
+            className="w-full py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-between bg-slate-50 dark:bg-[#1e1f22] text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#35373c] border border-slate-200/80 dark:border-white/5 transition"
+          >
+            <span className="flex items-center gap-2">
+              <HelpCircle className="w-4 h-4 text-[#5865F2]" />
+              <span>문의하기 / 문제 신고</span>
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 font-extrabold">
+              비공개 1:1
+            </span>
           </button>
 
           <button

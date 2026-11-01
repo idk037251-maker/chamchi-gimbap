@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
-import { isSuperAdmin, Post } from "@/types/chat";
+import { isSuperAdmin, isUserBanned, formatBanExpiry, Post } from "@/types/chat";
 import {
   X,
   UserPlus,
@@ -17,6 +17,8 @@ import {
   Loader2,
   Sparkles,
   Edit3,
+  ShieldAlert,
+  Unlock,
 } from "lucide-react";
 
 export default function UserProfileDetailModal() {
@@ -36,6 +38,8 @@ export default function UserProfileDetailModal() {
     toggleLikePost,
     addPostComment,
     uploadMediaFile,
+    setAdminBanningUser,
+    adminUnbanUser,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<"posts" | "info">("posts");
@@ -222,6 +226,19 @@ export default function UserProfileDetailModal() {
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span>1:1 DM</span>
                   </button>
+
+                  {/* Super Admin Custom Ban Button */}
+                  {iAmAdmin && !isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setAdminBanningUser(inspectedUser)}
+                      className="px-3 py-2 rounded-2xl bg-amber-500/15 hover:bg-amber-500 text-amber-700 dark:text-amber-400 hover:text-slate-950 border border-amber-500/30 text-xs font-black flex items-center gap-1.5 shadow-xs transition"
+                      title="최고 관리자 전용 맞춤형 제재 설정"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                      <span>👑 관리자 제재</span>
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -249,6 +266,39 @@ export default function UserProfileDetailModal() {
 
             <p className="text-xs text-slate-400">@{inspectedUser.username || inspectedUser.id}</p>
           </div>
+
+          {/* Ban Warning Banner if Inspected User is Banned */}
+          {isUserBanned(inspectedUser) && (
+            <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-center justify-between gap-2 mt-2">
+              <div className="space-y-0.5 min-w-0">
+                <p className="font-extrabold flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
+                  <span>활동 제한된 계정 ({formatBanExpiry(inspectedUser.bannedUntil)}까지)</span>
+                </p>
+                <p className="text-[11px] opacity-90 truncate">
+                  사유: {inspectedUser.banReason || "운영 원칙 위반"}
+                </p>
+              </div>
+              {iAmAdmin && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (confirm(`[${inspectedUser.name}] 유저의 차단을 즉시 해제하시겠습니까?`)) {
+                      await adminUnbanUser(inspectedUser.id);
+                      const next = { ...inspectedUser };
+                      delete next.bannedUntil;
+                      delete next.banReason;
+                      setInspectedUser(next);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shrink-0 transition shadow-xs flex items-center gap-1"
+                >
+                  <Unlock className="w-3 h-3" />
+                  <span>즉시 해제</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Status Message (Kakao-style) */}
           {inspectedUser.statusMessage && (

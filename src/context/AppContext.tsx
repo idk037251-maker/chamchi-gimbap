@@ -18,7 +18,12 @@ import {
   DmMessage,
   DmConversation,
   isSuperAdmin,
+  isUserBanned,
+  formatBanExpiry,
+  SupportInquiry,
+  ReportRecord,
 } from "@/types/chat";
+import { analyzeMessageForReport } from "@/lib/profanityAiEngine";
 import { BANNER_PRESETS, AVATAR_PRESETS } from "@/data/mockData";
 import { cloudStore } from "@/lib/cloudStore";
 import { filterProfanity } from "@/lib/profanityFilter";
@@ -141,6 +146,30 @@ interface AppContextType {
   setIsDmDrawerOpen: (open: boolean) => void;
   dmConversations: DmConversation[];
   totalDmUnreadCount: number;
+
+  // Support & Inquiry
+  isSupportModalOpen: boolean;
+  setIsSupportModalOpen: (open: boolean) => void;
+  submitSupportInquiry: (data: { category: string; title: string; content: string }) => Promise<{ success: boolean; error?: string }>;
+
+  // Moderation & AI Reports
+  reportingMessage: ChatMessage | null;
+  setReportingMessage: (msg: ChatMessage | null) => void;
+  reportMessage: (message: ChatMessage, reason: string) => Promise<{ success: boolean; verdict?: any; error?: string }>;
+
+  // Super Admin Custom Ban
+  adminBanningUser: UserProfile | null;
+  setAdminBanningUser: (user: UserProfile | null) => void;
+  adminBanUser: (targetUserId: string, durationMs: number, reason: string) => Promise<{ success: boolean; error?: string }>;
+  adminUnbanUser: (targetUserId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Real-time Community Presence (n/m)
+  communityActivePresences: Record<string, string[]>;
+  getCommunityActiveCount: (communityId: string) => number;
+
+  // Community Chat Volume Ranking
+  communityMessageCounts: Record<string, number>;
+  topRankedCommunities: Community[];
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -205,6 +234,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dmMessages, setDmMessages] = useState<DmMessage[]>([]);
   const [isDmDrawerOpen, setIsDmDrawerOpen] = useState(false);
   const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
+
+  // Support & Inquiry
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
+
+  // Moderation & AI Reports
+  const [reportingMessage, setReportingMessage] = useState<ChatMessage | null>(null);
+
+  // Super Admin Custom Ban
+  const [adminBanningUser, setAdminBanningUser] = useState<UserProfile | null>(null);
+
+  // Presence State (communityId -> userId -> timestamp)
+  const [presenceMap, setPresenceMap] = useState<Record<string, Record<string, number>>>({});
+
+  // Message Counts for communities
+  const [communityMessageCounts, setCommunityMessageCounts] = useState<Record<string, number>>({});
 
   const broadcastRef = useRef<BroadcastChannel | null>(null);
   const activeCommunityIdRef = useRef<string | null>(null);
@@ -352,9 +396,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             });
             alert("커뮤니티 관리자에 의해 이 방에서 내보내졌습니다.");
           }
+        } else if (type === "PRESENCE_PING") {
+          const { communityId, userId, timestamp } = payload || {};
+          if (communityId && userId) {
+            setPresenceMap((prev) => {
+              const commMap = { ...(prev[communityId] || {}) };
+              commMap[userId] = timestamp || Date.now();
+              return { ...prev, [communityId]: commMap };
+            });
+          }
+        } else if (type === "USER_BANNED") {
+          const { userId, bannedUntil, reason } = payload || {};
+          if (currentUserRef.current?.id === userId) {
+            setCurrentUser((prev) => (prev ? { ...prev, bannedUntil, banReason: reason } : null));
+            alert(`⚠️ 운영 정책 위반으로 계정 활동이 일시 제한되었습니다.\n만료 일시: ${formatBanExpiry(bannedUntil)}\n사유: ${reason}`);
+          }
+        } else if (type === "USER_UNBANNED") {
+          const { userId } = payload || {};
+          if (currentUserRef.current?.id === userId) {
+            setCurrentUser((prev) => {
+              if (!prev) return null;
+              const next = { ...prev };
+              delete next.bannedUntil;
+              delete next.banReason;
+              return next;
+            });
+            alert("👑 관리자에 의해 계정 활동 정지가 해제되었습니다.");
+          }
         }
       };
     }
+
+    // Periodic Presence Heartbeat (every 5 seconds)
+    const presenceTimer = setInterval(() => {
+      const u = currentUserRef.current;
+      const cId = activeCommunityIdRef.current;
+      const now = Date.now();
+
+      if (u && cId) {
+        try {
+          broadcastRef.current?.postMessage({
+            type: "PRESENCE_PING",
+            payload: { communityId: cId, userId: u.id, timestamp: now },
+          });
+        } catch {}
+
+        setPresenceMap((prev) => {
+          const commMap = { ...(prev[cId] || {}) };
+          commMap[u.id] = now;
+          return { ...prev, [cId]: commMap };
+        });
+
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(`chamchi_presence_${cId}_${u.id}`, now.toString());
+          } catch {}
+        }
+      }
+
+      // Cleanup presence entries older than 15s
+      setPresenceMap((prev) => {
+        let changed = false;
+        const next: Record<string, Record<string, number>> = {};
+        for (const [commKey, userMap] of Object.entries(prev)) {
+          const cleanUserMap: Record<string, number> = {};
+          for (const [userId, ts] of Object.entries(userMap)) {
+            if (now - ts < 15000) {
+              cleanUserMap[userId] = ts;
+            } else {
+              changed = true;
+            }
+          }
+          next[commKey] = cleanUserMap;
+        }
+        return changed ? next : prev;
+      });
+    }, 5000);
 
     // Connect Supabase WebSocket Realtime for live cross-device unread notification badges
     const cfg = getSupabaseConfig();
@@ -387,6 +504,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
+      clearInterval(presenceTimer);
       broadcastRef.current?.close();
       supabaseBridge.disconnectRealtime();
     };
@@ -541,6 +659,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const totalCommunityUnreadCount = Object.values(unreadCounts).reduce((acc, c) => acc + (c || 0), 0);
+
+  // Real-time Community Presence (n/m)
+  const communityActivePresences = React.useMemo(() => {
+    const res: Record<string, string[]> = {};
+    const now = Date.now();
+    for (const [cId, uMap] of Object.entries(presenceMap)) {
+      const activeUids = Object.entries(uMap)
+        .filter(([_, ts]) => now - ts < 15000)
+        .map(([uid]) => uid);
+      res[cId] = activeUids;
+    }
+    return res;
+  }, [presenceMap]);
+
+  const getCommunityActiveCount = useCallback(
+    (communityId: string): number => {
+      const userMap = presenceMap[communityId] || {};
+      const now = Date.now();
+      let count = 0;
+      for (const [uid, ts] of Object.entries(userMap)) {
+        if (now - ts < 15000) count++;
+      }
+      if (activeCommunityIdRef.current === communityId && count === 0) {
+        count = 1;
+      }
+      return Math.max(1, count);
+    },
+    [presenceMap]
+  );
+
+  // Sync Community Message Counts & Rankings
+  const syncCommunityMessageCounts = useCallback(async () => {
+    if (communities.length === 0) return;
+    try {
+      const counts = await cloudStore.getCommunityMessageCounts(communities);
+      setCommunityMessageCounts(counts);
+    } catch {}
+  }, [communities]);
+
+  useEffect(() => {
+    syncCommunityMessageCounts();
+    const interval = setInterval(syncCommunityMessageCounts, 8000);
+    return () => clearInterval(interval);
+  }, [syncCommunityMessageCounts]);
+
+  const topRankedCommunities = React.useMemo(() => {
+    const deduped = deduplicateCommunities(communities || []);
+    return [...deduped].sort((a, b) => {
+      const countA = communityMessageCounts[a.id] || 0;
+      const countB = communityMessageCounts[b.id] || 0;
+      return countB - countA;
+    });
+  }, [communities, communityMessageCounts]);
+
+  const checkBanAndBlock = (actionName: string): boolean => {
+    if (isUserBanned(currentUserRef.current)) {
+      const exp = formatBanExpiry(currentUserRef.current?.bannedUntil);
+      const r = currentUserRef.current?.banReason || "운영 원칙 위반";
+      alert(`⚠️ 이용 규정 위반으로 활동이 제한된 계정입니다.\n해제 일시: ${exp}\n사유: ${r}\n\n'${actionName}' 작업을 수행할 수 없습니다.`);
+      return true;
+    }
+    return false;
+  };
 
   // Sync messages periodically for active community
   useEffect(() => {
@@ -803,6 +984,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const isCreatingRef = useRef(false);
 
   const createCommunity = async (data: NewCommunityInput): Promise<Community> => {
+    if (checkBanAndBlock("새 커뮤니티 개설")) {
+      throw new Error("활동 정지된 계정입니다.");
+    }
     if (isCreatingRef.current) {
       throw new Error("이미 커뮤니티를 생성하는 중입니다.");
     }
@@ -918,6 +1102,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = async (content: string, attachmentUrl?: string) => {
     if (!currentUser || !activeCommunityId) return;
+    if (checkBanAndBlock("메시지 전송")) return;
     if (!content.trim() && !attachmentUrl) return;
 
     const activeComm = communities.find((c) => c.id === activeCommunityId);
@@ -1034,8 +1219,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const uid = String(userIdOrProfile);
+
+    // 1. Try to fetch from cloudStore user vault
+    try {
+      const full = await cloudStore.loadSingleUser(uid);
+      if (full) {
+        setInspectedUser(full);
+        return;
+      }
+      const dir = await cloudStore.loadUsersDirectory();
+      for (const u of Object.values(dir)) {
+        if (u.id === uid || u.username.toLowerCase() === uid.toLowerCase()) {
+          setInspectedUser(u);
+          return;
+        }
+      }
+    } catch {}
+
     for (const comm of communities) {
-      const found = (comm.members || []).find((m) => m.userId === uid);
+      const found = (comm.members || []).find((m) => m.userId === uid || m.username === uid);
       if (found) {
         setInspectedUser({
           id: found.userId,
@@ -1073,6 +1275,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const toggleFollowUser = async (targetUserId: string): Promise<boolean> => {
     if (!currentUser || currentUser.id === targetUserId) return false;
+    if (checkBanAndBlock("팔로우")) return false;
     const res = await cloudStore.toggleFollow(currentUser.id, targetUserId);
     const isNowFollowing = res.isFollowing;
     setFollowingIds((prev) => {
@@ -1103,6 +1306,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     mediaType?: "image" | "video"
   ): Promise<Post | null> => {
     if (!currentUser) return null;
+    if (checkBanAndBlock("피드 게시물 작성")) return null;
     const newPost: Post = {
       id: newId("post"),
       authorId: currentUser.id,
@@ -1136,6 +1340,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const toggleLikePost = async (postId: string) => {
     if (!currentUser) return;
+    if (checkBanAndBlock("좋아요")) return;
     setUserPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
@@ -1151,6 +1356,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addPostComment = async (postId: string, content: string) => {
     if (!currentUser || !content.trim()) return;
+    if (checkBanAndBlock("댓글 작성")) return;
     const comment: PostComment = {
       id: newId("cmt"),
       postId,
@@ -1195,6 +1401,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const sendDmMessage = async (content: string, attachmentUrl?: string) => {
     if (!currentUser || !activeDmUser) return;
+    if (checkBanAndBlock("1:1 DM 전송")) return;
     if (!content.trim() && !attachmentUrl) return;
 
     const convId = cloudStore.getDmConversationId(currentUser.id, activeDmUser.id);
@@ -1278,6 +1485,138 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const totalDmUnreadCount = dmConversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
+  const submitSupportInquiry = async (data: {
+    category: string;
+    title: string;
+    content: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) {
+      return { success: false, error: "로그인이 필요합니다." };
+    }
+    try {
+      const inq: SupportInquiry = {
+        id: newId("inq"),
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userUsername: currentUser.username,
+        category: data.category,
+        title: data.title,
+        content: data.content,
+        createdAt: new Date().toISOString(),
+        status: "pending",
+      };
+      await cloudStore.submitSupportInquiry(inq);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || "문의 접수 실패" };
+    }
+  };
+
+  const reportMessage = async (
+    message: ChatMessage,
+    reason: string
+  ): Promise<{ success: boolean; verdict?: any; error?: string }> => {
+    if (!currentUser) {
+      return { success: false, error: "로그인이 필요합니다." };
+    }
+    try {
+      const verdict = analyzeMessageForReport(message.content, reason);
+      const reportRec: ReportRecord = {
+        id: newId("rep"),
+        reporterId: currentUser.id,
+        reporterName: currentUser.name,
+        targetUserId: message.senderId,
+        targetUserName: message.senderName,
+        messageId: message.id,
+        messageContent: message.content,
+        communityId: message.communityId,
+        reason,
+        aiVerdict: verdict,
+        createdAt: new Date().toISOString(),
+        status: verdict.isViolation ? "auto_actioned" : "pending",
+      };
+
+      await cloudStore.submitReport(reportRec);
+
+      if (verdict.isViolation) {
+        await cloudStore.banUser(message.senderId, verdict.bannedDays, verdict.reason);
+        const bannedUntil = new Date(Date.now() + verdict.bannedDays * 24 * 60 * 60 * 1000).toISOString();
+
+        try {
+          broadcastRef.current?.postMessage({
+            type: "USER_BANNED",
+            payload: {
+              userId: message.senderId,
+              bannedUntil,
+              reason: verdict.reason,
+            },
+          });
+        } catch {}
+
+        if (inspectedUser?.id === message.senderId) {
+          setInspectedUser((prev) => (prev ? { ...prev, bannedUntil, banReason: verdict.reason } : null));
+        }
+
+        if (currentUser.id === message.senderId) {
+          setCurrentUser((prev) => (prev ? { ...prev, bannedUntil, banReason: verdict.reason } : null));
+        }
+      }
+
+      return { success: true, verdict };
+    } catch (err: any) {
+      return { success: false, error: err.message || "신고 처리에 실패했습니다." };
+    }
+  };
+
+  const adminBanUser = async (
+    targetUserId: string,
+    durationMs: number,
+    reason: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || !isSuperAdmin(currentUser)) {
+      return { success: false, error: "최고 관리자 권한이 필요합니다." };
+    }
+    try {
+      const updated = await cloudStore.adminCustomBanUser(targetUserId, durationMs, reason);
+      if (inspectedUser?.id === targetUserId) {
+        setInspectedUser(updated);
+      }
+      const bannedUntil = new Date(Date.now() + durationMs).toISOString();
+      try {
+        broadcastRef.current?.postMessage({
+          type: "USER_BANNED",
+          payload: { userId: targetUserId, bannedUntil, reason },
+        });
+      } catch {}
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const adminUnbanUser = async (
+    targetUserId: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser || !isSuperAdmin(currentUser)) {
+      return { success: false, error: "최고 관리자 권한이 필요합니다." };
+    }
+    try {
+      const updated = await cloudStore.unbanUser(targetUserId);
+      if (inspectedUser?.id === targetUserId) {
+        setInspectedUser(updated);
+      }
+      try {
+        broadcastRef.current?.postMessage({
+          type: "USER_UNBANNED",
+          payload: { userId: targetUserId },
+        });
+      } catch {}
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -1350,6 +1689,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsDmDrawerOpen,
         dmConversations,
         totalDmUnreadCount,
+        isSupportModalOpen,
+        setIsSupportModalOpen,
+        submitSupportInquiry,
+        reportingMessage,
+        setReportingMessage,
+        reportMessage,
+        adminBanningUser,
+        setAdminBanningUser,
+        adminBanUser,
+        adminUnbanUser,
+        communityActivePresences,
+        getCommunityActiveCount,
+        communityMessageCounts,
+        topRankedCommunities,
       }}
     >
       {children}
