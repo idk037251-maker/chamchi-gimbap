@@ -49,7 +49,7 @@ export default function HomePage() {
       {isBanned && (
         <div className="bg-rose-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between z-30 shadow-md">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-[#FEE500] shrink-0" />
+            <ShieldAlert className="w-4 h-4 text-[#F5C842] shrink-0" />
             <span>
               ⚠️ 이용 규정 위반으로 계정 활동이 일시 제한되었습니다. (해제 일시: {formatBanExpiry(currentUser.bannedUntil)} / 사유: {currentUser.banReason || "운영 원칙 위반"})
             </span>

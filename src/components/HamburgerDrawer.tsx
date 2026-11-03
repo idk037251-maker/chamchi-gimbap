@@ -88,7 +88,7 @@ export default function HamburgerDrawer() {
         {/* Top Bar inside Drawer */}
         <div className="px-4 py-3.5 flex items-center justify-between border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FEE500]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#F5C842]" />
             <span className="font-extrabold text-sm tracking-tight flex items-center gap-1.5">
               <span>🍙</span>
               <span>참치김밥 메뉴</span>
@@ -142,8 +142,8 @@ export default function HamburgerDrawer() {
                   />
                 </div>
 
-                {/* Kakao style status pill */}
-                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#FEE500]/20 dark:bg-[#FEE500]/15 text-amber-900 dark:text-[#FEE500] border border-[#FEE500]/40 max-w-[160px] truncate">
+                {/* Status pill */}
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#F5C842]/20 dark:bg-[#F5C842]/15 text-amber-900 dark:text-[#F5C842] border border-[#F5C842]/40 max-w-[160px] truncate">
                   💬 {currentUser.statusMessage || "상태 메시지 없음"}
                 </span>
               </div>
@@ -175,7 +175,7 @@ export default function HamburgerDrawer() {
                     setIsDrawerOpen(false);
                     openFollowListModal("followers", currentUser);
                   }}
-                  className="hover:text-[#5865F2] dark:hover:text-[#FEE500] hover:underline transition cursor-pointer"
+                  className="hover:text-[#5865F2] dark:hover:text-[#F5C842] hover:underline transition cursor-pointer"
                   title="내 팔로워 명단 보기"
                 >
                   <strong className="text-slate-900 dark:text-white font-extrabold">
@@ -189,7 +189,7 @@ export default function HamburgerDrawer() {
                     setIsDrawerOpen(false);
                     openFollowListModal("following", currentUser);
                   }}
-                  className="hover:text-[#5865F2] dark:hover:text-[#FEE500] hover:underline transition cursor-pointer"
+                  className="hover:text-[#5865F2] dark:hover:text-[#F5C842] hover:underline transition cursor-pointer"
                   title="내 팔로잉 명단 보기"
                 >
                   <strong className="text-slate-900 dark:text-white font-extrabold">
@@ -240,7 +240,7 @@ export default function HamburgerDrawer() {
             }}
             className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#5865F2] to-indigo-600 hover:from-[#4752C4] hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition"
           >
-            <PlusCircle className="w-4 h-4 text-[#FEE500]" />
+            <PlusCircle className="w-4 h-4 text-[#F5C842]" />
             <span>+ 커뮤니티 만들기</span>
           </button>
 
@@ -271,7 +271,7 @@ export default function HamburgerDrawer() {
               <MessageSquareHeart className="w-4 h-4 text-pink-500" />
               <span>1:1 개인 DM 대화 목록</span>
             </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEE500] text-[#3C1E1E] font-extrabold">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#F5C842] text-[#1E1B13] font-extrabold">
               열기
             </span>
           </button>
@@ -306,7 +306,7 @@ export default function HamburgerDrawer() {
             }}
             className={`w-full py-2.5 px-3.5 rounded-xl text-xs font-bold flex items-center justify-between transition ${
               activeCommunityId === null
-                ? "bg-[#FEE500] text-[#3C1E1E] shadow-sm"
+                ? "bg-[#F5C842] text-[#1E1B13] shadow-sm"
                 : "bg-slate-100 dark:bg-[#1e1f22] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#35373c]"
             }`}
           >

@@ -10,10 +10,10 @@ export interface UserProfile {
   bannerUrl: string;
   bannerColor: string;
   bio: string;
-  statusMessage: string; // 카카오톡 스타일 상태 메시지
+  statusMessage: string; // 프로필 상태 메시지
   status: UserStatus;
   createdAt: string;
-  authProvider: "site" | "email" | "google" | "kakao";
+  authProvider: "site" | "email" | "google";
   followersCount?: number;
   followingCount?: number;
   bannedUntil?: string; // ISO 8601 string for account activity suspension
@@ -73,7 +73,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   createdAt?: string; // ISO 8601 string for join-time filter
-  unreadCount?: number; // KakaoTalk '1' unread indicator style
+  unreadCount?: number; // 실시간 안 읽은 인원수 숫자 표시
   readUserIds?: string[]; // IDs of users who have read this message
   reactions: Reaction[];
   isSystem?: boolean;
@@ -142,7 +142,7 @@ export interface DmConversation {
   unreadCount: number;
 }
 
-export type ChatStyleMode = "hybrid" | "discord" | "kakao";
+export type ChatStyleMode = "default" | "compact" | "feed";
 
 /**
  * Super Admin identifier:

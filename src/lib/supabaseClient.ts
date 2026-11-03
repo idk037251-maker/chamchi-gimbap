@@ -283,7 +283,8 @@ export class SupabaseBridge {
                 presence: { key: "" },
                 postgres_changes: [
                   { event: "INSERT", schema: "public", table: "messages" },
-                  { event: "INSERT", schema: "public", table: "communities" },
+                  { event: "*", schema: "public", table: "communities" },
+                  { event: "*", schema: "public", table: "follows" },
                 ],
               },
               ...(cfg.anonKey.startsWith("eyJ") ? { access_token: cfg.anonKey } : {}),

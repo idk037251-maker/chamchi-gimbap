@@ -99,8 +99,14 @@ export default function FollowListModal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col max-h-[85vh]">
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs animate-in fade-in duration-200"
+      onClick={closeFollowListModal}
+    >
+      <div
+        className="relative w-full max-w-md bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 rounded-3xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col max-h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50/70 dark:bg-[#1e1f22]">
           <div className="flex items-center gap-3 min-w-0">
@@ -204,7 +210,7 @@ export default function FollowListModal() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-[#5865F2] dark:group-hover:text-[#FEE500] transition">
+                        <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate group-hover:text-[#5865F2] dark:group-hover:text-[#F5C842] transition">
                           {u.name}
                         </span>
 

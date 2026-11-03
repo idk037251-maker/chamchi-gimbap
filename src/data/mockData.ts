@@ -4,21 +4,21 @@ export const AVATAR_PRESETS = [
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Mimi&backgroundColor=c0aede",
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Jack&backgroundColor=d1d4f9",
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Nala&backgroundColor=ffd5dc",
-  "https://api.dicebear.com/7.x/bottts/svg?seed=ChamchiGimbap&backgroundColor=fee500",
-  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Ryan&backgroundColor=fada0a",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=ChamchiGimbap&backgroundColor=f5c842",
+  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Ryan&backgroundColor=e5b834",
   "https://api.dicebear.com/7.x/lorelei/svg?seed=Luna&backgroundColor=b6e3f4",
 ];
 
 export const BANNER_PRESETS = [
   {
-    id: "discord-blurple",
-    label: "디스코드 블러플",
-    gradient: "linear-gradient(135deg, #5865F2 0%, #3b429f 50%, #1e1f22 100%)",
+    id: "deep-indigo",
+    label: "딥 인디고",
+    gradient: "linear-gradient(135deg, #4f46e5 0%, #3730a3 50%, #1e1f22 100%)",
   },
   {
-    id: "kakao-yellow",
-    label: "카카오 옐로우",
-    gradient: "linear-gradient(135deg, #FEE500 0%, #F59E0B 60%, #3C1E1E 100%)",
+    id: "mandarin-yellow",
+    label: "만다린 옐로우",
+    gradient: "linear-gradient(135deg, #f5c842 0%, #d99b26 60%, #292518 100%)",
   },
   {
     id: "cyber-neon",

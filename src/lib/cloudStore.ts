@@ -55,6 +55,10 @@ function formatKoreanTime(dateObj = new Date()) {
 }
 
 function mapDbCommunityToModel(row: any): Community {
+  const members = Array.isArray(row.members) ? row.members : [];
+  const rawMemberCount = typeof row.member_count === "number" ? row.member_count : (row.memberCount || 1);
+  const memberCount = Math.max(members.length, rawMemberCount, 1);
+
   return {
     id: row.id,
     name: row.name || "",
@@ -62,15 +66,15 @@ function mapDbCommunityToModel(row: any): Community {
     rules: Array.isArray(row.rules) ? row.rules : [],
     category: row.category || "자유 / 소통",
     iconEmoji: row.icon_emoji || row.iconEmoji || "💬",
-    bannerGradient: row.banner_gradient || row.bannerGradient || "linear-gradient(135deg, #5865F2 0%, #1e1f22 100%)",
-    memberCount: typeof row.member_count === "number" ? row.member_count : (row.memberCount || 1),
-    onlineCount: typeof row.online_count === "number" ? row.online_count : (row.onlineCount || 1),
+    bannerGradient: row.banner_gradient || row.bannerGradient || "linear-gradient(135deg, #4f46e5 0%, #1e1f22 100%)",
+    memberCount,
+    onlineCount: typeof row.online_count === "number" ? row.online_count : 0,
     createdBy: row.created_by || row.createdBy || "방장",
     createdById: row.created_by_id || row.createdById,
     createdAt: row.created_at || row.createdAt || new Date().toISOString().slice(0, 10),
     tags: Array.isArray(row.tags) ? row.tags : [],
     channels: Array.isArray(row.channels) ? row.channels : [{ id: "general", name: "자유-대화방", type: "text", description: "메인 대화 채널" }],
-    members: Array.isArray(row.members) ? row.members : [],
+    members,
     kickedUserIds: Array.isArray(row.kicked_user_ids) ? row.kicked_user_ids : (Array.isArray(row.kickedUserIds) ? row.kickedUserIds : []),
   };
 }
@@ -503,6 +507,33 @@ export const cloudStore = {
     }
 
     return cached;
+  },
+
+  async getCommunity(communityId: string): Promise<Community | null> {
+    const cfg = getSupabaseConfig();
+    if (cfg) {
+      try {
+        const res = await fetch(
+          `${cfg.url}/rest/v1/communities?id=eq.${encodeURIComponent(communityId)}&select=*&limit=1`,
+          { headers: supabaseHeaders(cfg) }
+        );
+        if (res.ok) {
+          const rows = await res.json();
+          if (Array.isArray(rows) && rows[0]) {
+            const mapped = mapDbCommunityToModel(rows[0]);
+            const cached = getLocalCache<Community[]>(CACHE_KEYS.COMMUNITIES, []);
+            const updated = cached.map((c) => (c.id === communityId ? mapped : c));
+            setLocalCache(CACHE_KEYS.COMMUNITIES, updated);
+            return mapped;
+          }
+        }
+      } catch (e) {
+        console.warn("Supabase getCommunity error:", e);
+      }
+    }
+
+    const communities = await this.loadCommunities();
+    return communities.find((c) => c.id === communityId) || null;
   },
 
   async saveCommunity(newComm: Community): Promise<Community[]> {

@@ -28,6 +28,8 @@ export default function ProfileSettingsModal() {
     isCloudConnected,
     isProfileModalOpen,
     setIsProfileModalOpen,
+    followCounts,
+    openFollowListModal,
   } = useApp();
 
   const [name, setName] = useState("");
@@ -297,11 +299,47 @@ export default function ProfileSettingsModal() {
                 <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-[#5865F2]/20 text-[#5865F2] dark:text-indigo-300 border border-[#5865F2]/30">
                   {pronounText.trim() || "대명사"}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FEE500]/20 text-amber-800 dark:text-[#FEE500]">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#F5C842]/20 text-amber-900 dark:text-[#F5C842]">
                   💬 {statusMessage || "상태 메시지"}
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{bio}</p>
+
+              {/* Follower / Following Quick Access */}
+              <div className="flex items-center gap-2 mt-3 text-xs text-slate-500 dark:text-slate-400">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFollowListModal("followers", currentUser);
+                  }}
+                  className="group/stat flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] hover:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-slate-200/80 dark:border-white/10 hover:border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="내 팔로워 명단 보기"
+                >
+                  <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842] group-hover/stat:underline">
+                    {followCounts[currentUser.id]?.followers || 0}
+                  </strong>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842]">
+                    팔로워
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFollowListModal("following", currentUser);
+                  }}
+                  className="group/stat flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] hover:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-slate-200/80 dark:border-white/10 hover:border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="내 팔로잉 명단 보기"
+                >
+                  <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842] group-hover/stat:underline">
+                    {followCounts[currentUser.id]?.following || 0}
+                  </strong>
+                  <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842]">
+                    팔로잉
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
 

@@ -106,7 +106,7 @@ interface AppContextType {
   sendMessage: (content: string, attachmentUrl?: string) => Promise<void>;
   toggleReaction: (messageId: string, emoji: string) => void;
 
-  // KakaoTalk Unread & Message Deletion & Admin Claim
+  // Realtime Message Unread & Deletion & Admin Claim
   markCommunityMessagesRead: (communityId: string, messageIds: string[]) => Promise<void>;
   deleteChatMessage: (communityId: string, messageId: string) => Promise<void>;
   claimCommunityOwnership: (communityId: string) => Promise<boolean>;
@@ -212,7 +212,7 @@ const saveLocal = (key: string, value: unknown) => {
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [chatStyle, setChatStyle] = useState<ChatStyleMode>("hybrid");
+  const [chatStyle, setChatStyle] = useState<ChatStyleMode>("default");
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [authError, setAuthError] = useState("");
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -424,6 +424,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               return { ...prev, [communityId]: commMap };
             });
           }
+        } else if (type === "PRESENCE_LEAVE") {
+          const { communityId, userId } = payload || {};
+          if (communityId && userId) {
+            setPresenceMap((prev) => {
+              if (!prev[communityId] || !prev[communityId][userId]) return prev;
+              const commMap = { ...prev[communityId] };
+              delete commMap[userId];
+              return { ...prev, [communityId]: commMap };
+            });
+          }
+        } else if (type === "COMMUNITY_UPDATED" && payload) {
+          setCommunities((prev) => {
+            const idx = prev.findIndex((c) => c.id === payload.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = payload;
+              return next;
+            }
+            return [payload, ...prev];
+          });
         } else if (type === "USER_BANNED") {
           const { userId, bannedUntil, reason } = payload || {};
           if (currentUserRef.current?.id === userId) {
@@ -496,7 +516,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
     }, 5000);
 
-    // Connect Supabase WebSocket Realtime for live cross-device unread notification badges
+    // Handle tab / window closing or navigating away: broadcast PRESENCE_LEAVE
+    const handleUnload = () => {
+      const u = currentUserRef.current;
+      const cId = activeCommunityIdRef.current;
+      if (u && cId) {
+        try {
+          broadcastRef.current?.postMessage({
+            type: "PRESENCE_LEAVE",
+            payload: { communityId: cId, userId: u.id },
+          });
+          if (typeof window !== "undefined") {
+            localStorage.removeItem(`chamchi_presence_${cId}_${u.id}`);
+          }
+        } catch {}
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("beforeunload", handleUnload);
+      window.addEventListener("pagehide", handleUnload);
+    }
+
+    // Connect Supabase WebSocket Realtime for live cross-device unread notification badges & community updates
     const cfg = getSupabaseConfig();
     if (cfg && cfg.url && cfg.anonKey) {
       try {
@@ -519,6 +561,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }));
               }
             }
+          } else if (evt.table === "communities" && evt.record) {
+            // Live community updates (member counts, new members, kicks)
+            cloudStore.loadCommunities().then((freshComms) => {
+              if (Array.isArray(freshComms)) {
+                setCommunities(deduplicateCommunities(freshComms));
+              }
+            });
+          } else if (evt.table === "follows") {
+            const u = currentUserRef.current;
+            if (u) {
+              cloudStore.getFollowCounts(u.id).then((counts) => {
+                setFollowCounts((prev) => ({ ...prev, [u.id]: counts }));
+              });
+            }
           }
         });
       } catch (e) {
@@ -528,6 +584,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       clearInterval(presenceTimer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("beforeunload", handleUnload);
+        window.removeEventListener("pagehide", handleUnload);
+      }
       broadcastRef.current?.close();
       supabaseBridge.disconnectRealtime();
     };
@@ -701,16 +761,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const userMap = presenceMap[communityId] || {};
       const now = Date.now();
       let count = 0;
-      for (const [uid, ts] of Object.entries(userMap)) {
+      for (const [_, ts] of Object.entries(userMap)) {
         if (now - ts < 15000) count++;
       }
-      if (activeCommunityIdRef.current === communityId && count === 0) {
-        count = 1;
-      }
-      return Math.max(1, count);
+      return count;
     },
     [presenceMap]
   );
+
+  // Active Room Presence & Member Sync Transition Hook
+  const prevActiveCommunityIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const prevCId = prevActiveCommunityIdRef.current;
+    const currentCId = activeCommunityId;
+    const u = currentUserRef.current;
+
+    if (prevCId && prevCId !== currentCId && u) {
+      // User left room: immediately notify and untrack presence
+      try {
+        broadcastRef.current?.postMessage({
+          type: "PRESENCE_LEAVE",
+          payload: { communityId: prevCId, userId: u.id },
+        });
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(`chamchi_presence_${prevCId}_${u.id}`);
+        }
+      } catch {}
+      setPresenceMap((prev) => {
+        if (!prev[prevCId] || !prev[prevCId][u.id]) return prev;
+        const commMap = { ...prev[prevCId] };
+        delete commMap[u.id];
+        return { ...prev, [prevCId]: commMap };
+      });
+    }
+
+    if (currentCId && u) {
+      // User entered room: immediately ping presence & fetch fresh community
+      const now = Date.now();
+      try {
+        broadcastRef.current?.postMessage({
+          type: "PRESENCE_PING",
+          payload: { communityId: currentCId, userId: u.id, timestamp: now },
+        });
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`chamchi_presence_${currentCId}_${u.id}`, now.toString());
+        }
+      } catch {}
+      setPresenceMap((prev) => {
+        const commMap = { ...(prev[currentCId] || {}) };
+        commMap[u.id] = now;
+        return { ...prev, [currentCId]: commMap };
+      });
+
+      // Query exact community table count and members to eliminate any loading discrepancy
+      cloudStore.getCommunity(currentCId).then((freshComm) => {
+        if (freshComm) {
+          setCommunities((prev) => prev.map((c) => (c.id === freshComm.id ? freshComm : c)));
+        }
+      });
+    }
+
+    prevActiveCommunityIdRef.current = currentCId;
+  }, [activeCommunityId]);
 
   // Sync Community Message Counts & Rankings
   const syncCommunityMessageCounts = useCallback(async () => {
@@ -989,6 +1102,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (res.community) {
       const updated = res.community;
       setCommunities((prev) => prev.map((c) => (c.id === communityId ? updated : c)));
+      try {
+        broadcastRef.current?.postMessage({
+          type: "COMMUNITY_UPDATED",
+          payload: updated,
+        });
+      } catch {}
     }
 
     setJoinedCommunityIds((prev) => {
@@ -1101,6 +1220,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (res.community) {
       const updated = res.community;
       setCommunities((prev) => prev.map((c) => (c.id === communityId ? updated : c)));
+      try {
+        broadcastRef.current?.postMessage({
+          type: "COMMUNITY_UPDATED",
+          payload: updated,
+        });
+      } catch {}
     }
 
     try {
@@ -1194,7 +1319,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await cloudStore.toggleReaction(activeCommunityId, messageId, emoji, currentUser.id);
   };
 
-  // KakaoTalk Unread & Message Deletion & Admin Claim
+  // Realtime Message Unread & Deletion & Admin Claim
   const markCommunityMessagesRead = useCallback(async (communityId: string, messageIds: string[]) => {
     if (!currentUserRef.current || !messageIds || messageIds.length === 0) return;
     const uid = currentUserRef.current.id;

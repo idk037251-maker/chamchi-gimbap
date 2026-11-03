@@ -63,7 +63,7 @@ export default function CommunityLobby() {
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2.5 max-w-2xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-bold">
-                <span className="w-2 h-2 rounded-full bg-[#FEE500] animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-[#F5C842] animate-pulse" />
                 <span>실시간 라이브 커뮤니티</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
@@ -76,7 +76,7 @@ export default function CommunityLobby() {
 
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="px-5 py-3 rounded-2xl bg-[#FEE500] hover:bg-[#FADA0A] text-[#3C1E1E] font-extrabold text-xs sm:text-sm shadow-lg flex items-center gap-2 transition transform hover:scale-[1.02]"
+              className="px-5 py-3 rounded-2xl bg-[#F5C842] hover:bg-[#E5B834] text-[#1E1B13] font-extrabold text-xs sm:text-sm shadow-lg flex items-center gap-2 transition transform hover:scale-[1.02]"
             >
               <PlusCircle className="w-4 h-4" />
               <span>새 커뮤니티 만들기</span>
@@ -91,7 +91,7 @@ export default function CommunityLobby() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="커뮤니티 이름, 소개글, #해시태그로 검색..."
-              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white dark:bg-[#1e1f22] text-slate-900 dark:text-white placeholder:text-slate-400 text-sm shadow-md focus:outline-hidden focus:ring-2 focus:ring-[#FEE500]"
+              className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white dark:bg-[#1e1f22] text-slate-900 dark:text-white placeholder:text-slate-400 text-sm shadow-md focus:outline-hidden focus:ring-2 focus:ring-[#F5C842]"
             />
           </div>
         </div>
@@ -128,7 +128,7 @@ export default function CommunityLobby() {
                 ];
                 const msgCount = communityMessageCounts[comm.id] || 0;
                 const activeCount = getCommunityActiveCount(comm.id);
-                const totalMembers = comm.memberCount || 1;
+                const totalMembers = Math.max(comm.members?.length || 0, comm.memberCount || 1, 1);
 
                 return (
                   <div
@@ -170,10 +170,10 @@ export default function CommunityLobby() {
                     <div className="mt-3.5 pt-2.5 border-t border-slate-200/60 dark:border-white/5 flex items-center justify-between text-xs">
                       <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>{activeCount}/{totalMembers}명 참여 중</span>
+                        <span>{activeCount}/{totalMembers}명 접속 중</span>
                       </span>
 
-                      <span className="text-[11px] font-black text-[#5865F2] dark:text-[#FEE500] flex items-center gap-1">
+                      <span className="text-[11px] font-black text-[#5865F2] dark:text-[#F5C842] flex items-center gap-1">
                         <span>입장하기</span>
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </span>
@@ -204,7 +204,7 @@ export default function CommunityLobby() {
           </div>
 
           <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-            개설된 커뮤니티 총 <strong className="text-[#5865F2] dark:text-[#FEE500]">{filteredCommunities.length}</strong>개
+            개설된 커뮤니티 총 <strong className="text-[#5865F2] dark:text-[#F5C842]">{filteredCommunities.length}</strong>개
           </div>
         </div>
 
@@ -226,7 +226,7 @@ export default function CommunityLobby() {
               onClick={() => setIsCreateModalOpen(true)}
               className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs sm:text-sm font-bold shadow-md transition"
             >
-              <PlusCircle className="w-4 h-4 text-[#FEE500]" />
+              <PlusCircle className="w-4 h-4 text-[#F5C842]" />
               <span>첫 커뮤니티 만들기</span>
             </button>
           </div>
@@ -238,7 +238,7 @@ export default function CommunityLobby() {
               const unreadCount = getCommunityUnreadCount(comm.id);
               const msgCount = communityMessageCounts[comm.id] || 0;
               const activeCount = getCommunityActiveCount(comm.id);
-              const totalMembers = comm.memberCount || 1;
+              const totalMembers = Math.max(comm.members?.length || 0, comm.memberCount || 1, 1);
 
               // Check if top 3
               const rankIdx = topRankedCommunities.findIndex((c) => c.id === comm.id);
@@ -308,7 +308,7 @@ export default function CommunityLobby() {
                           </span>
                         )}
                         {isJoined && !isKicked && (
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#F5C842] text-[#1E1B13]">
                             참여 중
                           </span>
                         )}
@@ -367,7 +367,7 @@ export default function CommunityLobby() {
                     <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
                       <span className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>{activeCount}/{totalMembers}명 참여 중</span>
+                        <span>{activeCount}/{totalMembers}명 접속 중</span>
                       </span>
                       <span className="flex items-center gap-1">
                         <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
@@ -375,7 +375,7 @@ export default function CommunityLobby() {
                       </span>
                     </div>
 
-                    <span className="font-extrabold text-[#5865F2] dark:text-[#FEE500] flex items-center gap-1">
+                    <span className="font-extrabold text-[#5865F2] dark:text-[#F5C842] flex items-center gap-1">
                       <MessageSquare className="w-3.5 h-3.5" />
                       입장하기
                     </span>

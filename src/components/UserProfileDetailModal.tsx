@@ -224,7 +224,7 @@ export default function UserProfileDetailModal() {
                   <button
                     type="button"
                     onClick={handleStartDm}
-                    className="px-4 py-2 rounded-2xl bg-[#FEE500] hover:bg-[#fdd835] text-[#3C1E1E] text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition"
+                    className="px-4 py-2 rounded-2xl bg-[#F5C842] hover:bg-[#E5B834] text-[#1E1B13] text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition active:scale-95"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span>1:1 DM</span>
@@ -303,7 +303,7 @@ export default function UserProfileDetailModal() {
             </div>
           )}
 
-          {/* Status Message (Kakao-style) */}
+          {/* Status Message */}
           {inspectedUser.statusMessage && (
             <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#2b2d31] text-xs font-medium text-slate-700 dark:text-slate-300 inline-block max-w-full truncate border border-slate-200/60 dark:border-white/5">
               💬 {inspectedUser.statusMessage}
@@ -321,28 +321,34 @@ export default function UserProfileDetailModal() {
           <div className="flex items-center gap-2 sm:gap-3 mt-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
             <button
               type="button"
-              onClick={() => openFollowListModal("followers", inspectedUser)}
-              className="group/stat flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 dark:bg-[#1e1f22] hover:bg-[#5865F2]/10 dark:hover:bg-[#5865F2]/20 border border-slate-200/60 dark:border-white/5 hover:border-[#5865F2]/30 transition-all cursor-pointer shadow-2xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                openFollowListModal("followers", inspectedUser);
+              }}
+              className="group/stat flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] hover:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-slate-200/80 dark:border-white/10 hover:border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
               title="클릭하여 팔로워 명단 보기"
             >
-              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500] group-hover/stat:underline">
+              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842] group-hover/stat:underline">
                 {counts.followers || 0}
               </strong>
-              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500]">
+              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842]">
                 팔로워
               </span>
             </button>
 
             <button
               type="button"
-              onClick={() => openFollowListModal("following", inspectedUser)}
-              className="group/stat flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100/80 dark:bg-[#1e1f22] hover:bg-[#5865F2]/10 dark:hover:bg-[#5865F2]/20 border border-slate-200/60 dark:border-white/5 hover:border-[#5865F2]/30 transition-all cursor-pointer shadow-2xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                openFollowListModal("following", inspectedUser);
+              }}
+              className="group/stat flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#1e1f22] hover:bg-amber-500/10 dark:hover:bg-amber-500/20 border border-slate-200/80 dark:border-white/10 hover:border-amber-500/40 transition-all cursor-pointer shadow-xs active:scale-95"
               title="클릭하여 팔로잉 명단 보기"
             >
-              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500] group-hover/stat:underline">
+              <strong className="text-slate-900 dark:text-white font-black group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842] group-hover/stat:underline">
                 {counts.following || 0}
               </strong>
-              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-[#5865F2] dark:group-hover/stat:text-[#FEE500]">
+              <span className="font-semibold text-slate-600 dark:text-slate-300 group-hover/stat:text-amber-600 dark:group-hover/stat:text-[#F5C842]">
                 팔로잉
               </span>
             </button>

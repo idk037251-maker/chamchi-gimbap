@@ -160,7 +160,7 @@ export default function DmChatRoom() {
         ) : (
           dmMessages.map((msg) => {
             const isMe = msg.senderId === currentUser.id;
-            // KakaoTalk unread '1' badge:
+            // Realtime unread indicator:
             // If I sent the message, and recipient has not read it yet -> unread = 1
             const isUnreadByRecipient = isMe && !msg.readUserIds.includes(activeDmUser.id);
 
@@ -199,7 +199,7 @@ export default function DmChatRoom() {
                     <div
                       className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
                         isMe
-                          ? "bg-[#FEE500] text-[#3C1E1E] font-medium rounded-tr-xs shadow-xs"
+                          ? "bg-[#F5C842] dark:bg-[#E5B834] text-[#1E1B13] font-medium rounded-tr-xs shadow-xs"
                           : "bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 rounded-tl-xs shadow-xs"
                       }`}
                     >
@@ -216,10 +216,10 @@ export default function DmChatRoom() {
                       )}
                     </div>
 
-                    {/* KakaoTalk Unread '1' & Timestamp */}
+                    {/* Realtime Unread '1' & Timestamp */}
                     <div className={`flex flex-col ${isMe ? "items-end" : "items-start"} text-[10px] flex-shrink-0`}>
                       {isUnreadByRecipient && (
-                        <span className="text-[#f59e0b] dark:text-[#FEE500] font-black text-[11px] leading-tight">
+                        <span className="text-amber-600 dark:text-[#F5C842] font-black text-[11px] leading-tight">
                           1
                         </span>
                       )}
@@ -335,7 +335,7 @@ export default function DmChatRoom() {
           <button
             type="submit"
             disabled={!inputText.trim() && !pendingImage}
-            className="p-2.5 rounded-2xl bg-[#FEE500] hover:bg-[#fdd835] disabled:opacity-40 text-[#3C1E1E] transition shadow-xs flex-shrink-0"
+            className="p-2.5 rounded-2xl bg-[#F5C842] hover:bg-[#E5B834] disabled:opacity-40 text-[#1E1B13] transition shadow-xs flex-shrink-0 active:scale-95"
             title="메시지 전송"
           >
             <Send className="w-4 h-4" />

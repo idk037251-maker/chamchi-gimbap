@@ -36,7 +36,7 @@ export default function CreateCommunityModal() {
   const [bannerGradient, setBannerGradient] = useState(
     BANNER_PRESETS[0].gradient
   );
-  const [tagsInput, setTagsInput] = useState("#오픈채팅 #디스코드 #실시간소통");
+  const [tagsInput, setTagsInput] = useState("#오픈채팅 #소통 #실시간대화");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
@@ -247,7 +247,7 @@ export default function CreateCommunityModal() {
           {/* 3. Community Rules */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
-              <ShieldAlert className="w-3.5 h-3.5 text-[#FEE500]" />
+              <ShieldAlert className="w-3.5 h-3.5 text-[#F5C842]" />
               3. 커뮤니티 이용 규칙 (Rules - 줄바꿈으로 구분){" "}
               <span className="text-rose-500">* 필수</span>
             </label>
@@ -292,12 +292,12 @@ export default function CreateCommunityModal() {
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-[#FEE500]" />
+                  <Loader2 className="w-4 h-4 animate-spin text-[#F5C842]" />
                   <span>커뮤니티 생성 및 입장 중...</span>
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4 text-[#FEE500]" />
+                  <CheckCircle2 className="w-4 h-4 text-[#F5C842]" />
                   <span>커뮤니티 생성 완료 및 입장</span>
                 </>
               )}

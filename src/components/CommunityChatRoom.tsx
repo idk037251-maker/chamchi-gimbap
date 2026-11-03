@@ -250,7 +250,7 @@ export default function CommunityChatRoom() {
 
   return (
     <div className="flex-1 flex h-full overflow-hidden text-slate-800 dark:text-slate-100">
-      {/* 1. Left Channel Sidebar (Discord style) */}
+      {/* 1. Left Channel Sidebar */}
       <div className="w-60 hidden lg:flex flex-col bg-slate-100 dark:bg-[#2b2d31] border-r border-slate-200 dark:border-white/10 flex-shrink-0">
         {/* Community Title Banner */}
         <div className="p-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between gap-2 shadow-2xs">
@@ -344,7 +344,7 @@ export default function CommunityChatRoom() {
               onClick={() => setShowRulesPanel((prev) => !prev)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition ${
                 showRulesPanel
-                  ? "bg-[#FEE500] text-[#3C1E1E] border-[#FEE500]"
+                  ? "bg-[#F5C842] text-[#1E1B13] border-[#F5C842]"
                   : "bg-slate-100 dark:bg-[#2b2d31] text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10"
               }`}
             >
@@ -389,7 +389,7 @@ export default function CommunityChatRoom() {
           <div className="bg-slate-50 dark:bg-[#2b2d31]/95 border-b border-slate-200 dark:border-white/10 px-4 sm:px-6 py-4">
             <div className="max-w-4xl mx-auto flex flex-col md:flex-row gap-4 justify-between">
               <div className="space-y-1.5 flex-1">
-                <div className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#5865F2] dark:text-[#FEE500]">
+                <div className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#5865F2] dark:text-[#F5C842]">
                   <Megaphone className="w-4 h-4" />
                   <span>커뮤니티 소개</span>
                 </div>
@@ -400,7 +400,7 @@ export default function CommunityChatRoom() {
 
               <div className="md:w-80 p-3.5 rounded-2xl bg-white dark:bg-[#1e1f22] border border-slate-200 dark:border-white/10 space-y-2">
                 <span className="text-xs font-extrabold flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-[#FEE500]" />
+                  <ShieldAlert className="w-4 h-4 text-[#F5C842]" />
                   커뮤니티 이용 규칙
                 </span>
                 <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-300">
@@ -441,7 +441,7 @@ export default function CommunityChatRoom() {
                 msg.senderRole === "관리자" ||
                 (msg.senderName || "").trim().toLowerCase() === "참치김밥";
 
-              // KakaoTalk Unread Count
+              // Realtime Unread Count
               const readUsers = msg.readUserIds || [msg.senderId];
               const unreadCount = Math.max(
                 0,
@@ -491,7 +491,7 @@ export default function CommunityChatRoom() {
                         </span>
                       ) : (
                         msg.senderRole && (
-                          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#FEE500] text-[#3C1E1E]">
+                          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#F5C842] text-[#1E1B13]">
                             {msg.senderRole}
                           </span>
                         )
@@ -530,8 +530,8 @@ export default function CommunityChatRoom() {
                       <div
                         className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
                           isMe
-                            ? "bg-[#FEE500] text-[#3C1E1E] font-medium rounded-tr-xs"
-                            : "bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 rounded-tl-xs"
+                            ? "bg-[#F5C842] dark:bg-[#E5B834] text-[#1E1B13] font-medium rounded-tr-xs shadow-xs"
+                            : "bg-white dark:bg-[#2b2d31] text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 rounded-tl-xs shadow-xs"
                         }`}
                       >
                         {msg.content && <div>{msg.content}</div>}
@@ -553,10 +553,10 @@ export default function CommunityChatRoom() {
                         )}
                       </div>
 
-                      {/* KakaoTalk Unread Count & Timestamp */}
+                      {/* Realtime Unread Count & Timestamp */}
                       <div className={`flex flex-col ${isMe ? "items-end" : "items-start"} text-[10px] flex-shrink-0`}>
                         {unreadCount > 0 && (
-                          <span className="text-[#f59e0b] dark:text-[#FEE500] font-black text-[11px] leading-tight">
+                          <span className="text-amber-600 dark:text-[#F5C842] font-black text-[11px] leading-tight">
                             {unreadCount}
                           </span>
                         )}
@@ -694,7 +694,7 @@ export default function CommunityChatRoom() {
               disabled={!inputText.trim() && !pendingImage}
               className={`px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-1.5 transition ${
                 inputText.trim() || pendingImage
-                  ? "bg-[#FEE500] hover:bg-[#FADA0A] text-[#3C1E1E] shadow-xs"
+                  ? "bg-[#F5C842] hover:bg-[#E5B834] text-[#1E1B13] shadow-xs active:scale-95"
                   : "bg-slate-200 dark:bg-[#2b2d31] text-slate-400 cursor-not-allowed"
               }`}
             >
@@ -775,7 +775,7 @@ export default function CommunityChatRoom() {
                           </span>
                         ) : (
                           isMemberOwner && (
-                            <span className="text-[9px] font-extrabold bg-[#FEE500] text-[#3C1E1E] px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shadow-2xs">
+                            <span className="text-[9px] font-extrabold bg-[#F5C842] text-[#1E1B13] px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shadow-2xs">
                               <Crown className="w-2.5 h-2.5" />
                               방장
                             </span>

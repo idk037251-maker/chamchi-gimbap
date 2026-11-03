@@ -80,7 +80,7 @@ export default function TopNavigationBar() {
               <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white">
                 참치김밥
               </span>
-              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-[#FEE500] text-[#3C1E1E]">
+              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-[#F5C842] text-[#1E1B13]">
                 LIVE
               </span>
               {iAmAdmin && (
@@ -94,7 +94,7 @@ export default function TopNavigationBar() {
 
         <div className="h-5 w-px bg-slate-200 dark:bg-white/10 hidden md:block mx-1" />
 
-        {/* Quick Discord-style Server Pill Icons */}
+        {/* Quick Channel / Room Navigation */}
         <div className="hidden md:flex items-center gap-1.5 overflow-x-auto py-1">
           <button
             onClick={() => {
@@ -128,7 +128,7 @@ export default function TopNavigationBar() {
                 }}
                 className={`relative px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition max-w-[160px] ${
                   isActive
-                    ? "bg-[#FEE500] text-[#3C1E1E] shadow-xs"
+                    ? "bg-[#F5C842] text-[#1E1B13] shadow-xs"
                     : "bg-slate-100 dark:bg-[#2b2d31] text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-[#35373c]"
                 }`}
                 title={comm.name}
@@ -154,7 +154,7 @@ export default function TopNavigationBar() {
           onClick={() => setIsDmDrawerOpen(true)}
           className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
             activeDmUser !== null
-              ? "bg-[#FEE500] text-[#3C1E1E] shadow-xs"
+              ? "bg-[#F5C842] text-[#1E1B13] shadow-xs"
               : "bg-slate-100 dark:bg-[#2b2d31] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#35373c]"
           }`}
           title="1:1 개인 DM 대화 목록 열기"
@@ -199,7 +199,7 @@ export default function TopNavigationBar() {
           onClick={() => setIsCreateModalOpen(true)}
           className="px-3 py-1.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
         >
-          <PlusCircle className="w-3.5 h-3.5 text-[#FEE500]" />
+          <PlusCircle className="w-3.5 h-3.5 text-[#F5C842]" />
           <span className="hidden sm:inline">커뮤니티 만들기</span>
         </button>
 
